@@ -75,7 +75,7 @@ def _python_symbol_at_line(path: Path, line: int) -> str | None:
     for node in ast.walk(tree):
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             continue
-        end = getattr(node, "end_lineno", node.lineno)
+        end = node.end_lineno or node.lineno
         if node.lineno <= line <= end:
             candidates.append((end - node.lineno, node.name))
     return min(candidates, default=(0, ""))[1] or None
