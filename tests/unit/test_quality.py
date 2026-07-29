@@ -23,6 +23,7 @@ def _finding(**overrides: object) -> Finding:
         "evidence": "subprocess.run(command, shell=True)",
         "confidence": 0.95,
         "rule_id": "FF-SEC-002",
+        "scoring_eligible": True,
     }
     payload.update(overrides)
     return Finding(**payload)
@@ -37,7 +38,7 @@ def test_validation_accepts_supported_evidence(tmp_path: Path) -> None:
     supported, unsupported = validate_findings(tmp_path, [_finding()])
 
     assert unsupported == []
-    assert supported[0].validation_status == ValidationStatus.SUPPORTED
+    assert supported[0].validation_status == ValidationStatus.EVIDENCE_MATCHED
 
 
 def test_validation_rejects_missing_or_unredacted_evidence(tmp_path: Path) -> None:
@@ -111,3 +112,43 @@ def test_process_findings_filters_confidence_and_reports_quality(tmp_path: Path)
     assert quality.below_confidence_count == 1
     assert quality.supported_finding_count == 1
     assert score.value == 92
+
+
+def test_validation_rejects_parent_path_escape(tmp_path: Path) -> None:
+    supported, unsupported = validate_findings(
+        tmp_path,
+        [_finding(file=Path("../outside.py"), line_start=1, line_end=1)],
+    )
+
+    assert supported == []
+    assert unsupported[0].validation_status == ValidationStatus.UNSUPPORTED
+    assert "Finding path escapes the repository root." in unsupported[0].validation_messages
+
+
+def test_validation_rejects_line_outside_file(tmp_path: Path) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.py").write_text("print('safe')\n", encoding="utf-8")
+
+    supported, unsupported = validate_findings(
+        tmp_path,
+        [_finding(line_start=999, line_end=999, evidence="print('safe')")],
+    )
+
+    assert supported == []
+    assert unsupported[0].validation_status == ValidationStatus.UNSUPPORTED
+    assert "Finding line range is outside the file." in unsupported[0].validation_messages
+
+
+def test_score_ignores_findings_that_require_human_review() -> None:
+    score = calculate_score(
+        [
+            _finding(
+                severity=Severity.HIGH,
+                scoring_eligible=False,
+                validation_status=ValidationStatus.HUMAN_REVIEW_REQUIRED,
+            )
+        ]
+    )
+
+    assert score.value == 100
+    assert score.deductions["high"] == 0

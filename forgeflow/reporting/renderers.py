@@ -14,21 +14,42 @@ def _finding_markdown(finding: Finding) -> str:
 
     evidence = ""
     if finding.evidence:
-        evidence = f"\n\n**Evidence:** `{finding.evidence.replace('`', '\\`')}`"
+        escaped = finding.evidence.replace("`", "\\`")
+        evidence = f"\n\n**Evidence:** `{escaped}`"
+
+    messages = ""
+    if finding.validation_messages:
+        rendered = "\n".join(f"  - {message}" for message in finding.validation_messages)
+        messages = f"\n- Verification notes:\n{rendered}"
 
     sources = ", ".join(f"`{source}`" for source in finding.sources)
+    eligible = "yes" if finding.scoring_eligible else "no"
     return f"""### [{finding.severity.value.upper()}] {finding.title}
 
 - Rule: `{finding.rule_id}`
 - Location: {location}
 - Confidence: {finding.confidence:.2f}
-- Evidence status: `{finding.validation_status.value}`
-- Sources: {sources}
+- Verification status: `{finding.validation_status.value}`
+- Scoring and quality-gate eligible: **{eligible}**
+- Sources: {sources}{messages}
 
 {finding.description}
 
 **Recommendation:** {finding.recommendation}{evidence}
 """
+
+
+def _severity_summary(findings: list[Finding]) -> str:
+    severity_counts = Counter(finding.severity.value for finding in findings)
+    return "\n".join(
+        f"- {severity.capitalize()}: {severity_counts[severity]}"
+        for severity in ("critical", "high", "medium", "low", "info")
+        if severity_counts[severity]
+    ) or "- No findings"
+
+
+def _render_findings(findings: list[Finding], empty_message: str) -> str:
+    return "\n".join(_finding_markdown(finding) for finding in findings) or empty_message
 
 
 def _markdown_report(result: AnalysisResult) -> str:
@@ -37,20 +58,13 @@ def _markdown_report(result: AnalysisResult) -> str:
         f"- {language}: {count} file(s)" for language, count in repository.languages.items()
     ) or "- No recognized source files"
     manifests = "\n".join(f"- `{item}`" for item in repository.manifests) or "- None detected"
-    severity_counts = Counter(finding.severity.value for finding in result.findings)
-    finding_summary = "\n".join(
-        f"- {severity.capitalize()}: {severity_counts[severity]}"
-        for severity in ("critical", "high", "medium", "low", "info")
-        if severity_counts[severity]
-    ) or "- No findings"
-    findings = "\n".join(_finding_markdown(finding) for finding in result.findings)
+    eligible_findings = [finding for finding in result.findings if finding.scoring_eligible]
+    review_findings = [finding for finding in result.findings if not finding.scoring_eligible]
     agent_runs = "\n".join(
         f"- {name.capitalize()}: {run.status}; findings={run.finding_count}; "
         f"context_files={run.context_files}; duration_ms={run.duration_ms}"
         for name, run in sorted(result.execution.agent_runs.items())
     ) or "- No specialist agents requested"
-    if not findings:
-        findings = "No supported deterministic engineering findings were generated."
 
     return f"""# ForgeFlow Repository Review
 
@@ -58,13 +72,15 @@ def _markdown_report(result: AnalysisResult) -> str:
 
 This report contains bounded, read-only deterministic checks and any requested specialist-agent
 review. No repository code was executed or modified. Repository content was treated as untrusted
-data. Only evidence-supported findings at or above the configured confidence threshold are
-published.
+data. Evidence matching, semantic verification, and deterministic confirmation are reported
+separately. Only scoring-eligible findings affect the engineering score and `--fail-on` gate.
 
 ## Engineering score
 
 - Score: **{result.score.value}/100**
 - Risk level: **{result.score.risk_level.capitalize()}**
+- Scoring-eligible findings: **{result.quality.scoring_eligible_count}**
+- Human-review candidates: **{result.quality.human_review_count}**
 - Note: {result.score.disclaimer}
 
 ## Repository
@@ -98,18 +114,27 @@ published.
 ## Finding quality
 
 - Raw findings: {result.quality.raw_finding_count}
-- Supported findings: {result.quality.supported_finding_count}
+- Published evidence-backed findings: {result.quality.supported_finding_count}
+- Deterministically confirmed: {result.quality.deterministically_confirmed_count}
+- Semantically verified: {result.quality.semantically_verified_count}
+- Evidence matched only: {result.quality.evidence_matched_count}
+- Human review required: {result.quality.human_review_count}
+- Scoring eligible: {result.quality.scoring_eligible_count}
 - Unsupported findings rejected: {result.quality.unsupported_finding_count}
 - Findings below confidence threshold: {result.quality.below_confidence_count}
 - Duplicate findings merged: {result.quality.duplicates_merged}
 
-## Finding summary
+## Scoring-eligible finding summary
 
-{finding_summary}
+{_severity_summary(eligible_findings)}
 
-## Findings
+## Verified findings
 
-{findings}
+{_render_findings(eligible_findings, "No scoring-eligible findings were generated.")}
+
+## Human review candidates
+
+{_render_findings(review_findings, "No human-review candidates were generated.")}
 """
 
 
@@ -126,11 +151,15 @@ def write_analysis_reports(
         json.dumps(findings_payload, indent=2, ensure_ascii=False), encoding="utf-8"
     )
     severity_counts = Counter(finding.severity.value for finding in result.findings)
+    eligible_counts = Counter(
+        finding.severity.value for finding in result.findings if finding.scoring_eligible
+    )
     summary_payload = {
         "repository": result.repository.model_dump(mode="json"),
         "analysis": {
             "finding_count": len(result.findings),
             "severity_counts": dict(sorted(severity_counts.items())),
+            "scoring_eligible_severity_counts": dict(sorted(eligible_counts.items())),
             "quality": result.quality.model_dump(mode="json"),
             "score": result.score.model_dump(mode="json"),
         },
