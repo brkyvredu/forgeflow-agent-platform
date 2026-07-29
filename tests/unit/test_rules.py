@@ -71,3 +71,42 @@ def test_rules_detect_container_and_repository_gaps(tmp_path: Path) -> None:
     rules = {finding.rule_id for finding in findings}
 
     assert {"FF-CONTAINER-001", "FF-CONTAINER-002", "FF-TEST-001", "FF-CI-001"} <= rules
+
+
+def test_python_rules_ignore_security_examples_embedded_in_strings(tmp_path: Path) -> None:
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_fixtures.py").write_text(
+        "payload = '{\"evidence\": \"subprocess.run(command, shell=True)\"}'\n"
+        "sample = 'password = \"production-password-123\"'\n",
+        encoding="utf-8",
+    )
+    (tmp_path / ".github" / "workflows").mkdir(parents=True)
+    (tmp_path / ".github" / "workflows" / "ci.yml").write_text(
+        "name: CI", encoding="utf-8"
+    )
+
+    findings = _scan(tmp_path)
+
+    assert all(finding.rule_id not in {"FF-SEC-001", "FF-SEC-002"} for finding in findings)
+
+
+def test_python_rules_detect_import_aliases_and_literal_secret_dicts(tmp_path: Path) -> None:
+    secret_value = "-".join(("production", "password", "123"))
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.py").write_text(
+        "import subprocess as sp\n"
+        f"settings = {{'db_password': '{secret_value}'}}\n"
+        "sp.run(command, shell=True)\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "tests").mkdir()
+    (tmp_path / ".github" / "workflows").mkdir(parents=True)
+    (tmp_path / ".github" / "workflows" / "ci.yml").write_text(
+        "name: CI", encoding="utf-8"
+    )
+
+    findings = _scan(tmp_path)
+    by_rule = {finding.rule_id: finding for finding in findings}
+
+    assert {"FF-SEC-001", "FF-SEC-002"} <= by_rule.keys()
+    assert secret_value not in (by_rule["FF-SEC-001"].evidence or "")
