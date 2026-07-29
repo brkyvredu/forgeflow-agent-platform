@@ -121,6 +121,16 @@ python -m forgeflow_mcp.server
 adk api_server --host 0.0.0.0 --port 8000 .
 ```
 
+Run a deterministic, read-only repository discovery:
+
+```bash
+forgeflow analyze --repo . --output reports
+```
+
+This first v0.2 increment writes `review.md`, `findings.json`, and
+`execution-summary.json`. It discovers repository metadata only; specialist-agent findings are
+introduced in the next increment.
+
 Run tests:
 
 ```bash
