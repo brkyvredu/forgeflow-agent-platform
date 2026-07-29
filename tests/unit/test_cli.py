@@ -313,3 +313,64 @@ def test_quality_gate_ignores_human_review_candidate(tmp_path: Path) -> None:
     assert candidate["validation_status"] == "human_review_required"
     assert candidate["scoring_eligible"] is False
     assert candidate["severity"] == "info"
+
+
+class _FakeArchitectureReviewer:
+    async def review(self, evidence: "RepositoryEvidence") -> list["Finding"]:
+        from forgeflow.domain.models import Finding, Severity
+
+        return [
+            Finding(
+                agent="architecture-agent",
+                category="dependency-direction",
+                severity=Severity.MEDIUM,
+                title="CLI imports a concrete adapter",
+                description="The entry point directly imports infrastructure code.",
+                recommendation="Introduce an application-facing protocol.",
+                file=Path("cli.py"),
+                line_start=1,
+                line_end=1,
+                evidence="from infrastructure.database import Repository",
+                confidence=0.88,
+                rule_id="FF-AGENT-ARCH-TEST",
+            )
+        ]
+
+
+def test_agent_selection_accepts_architecture_agent() -> None:
+    assert _normalize_agents("architecture,test,security") == (
+        "security",
+        "test",
+        "architecture",
+    )
+
+
+def test_analyze_runs_architecture_agent_as_human_review_candidate(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    (repository / "cli.py").write_text(
+        "from infrastructure.database import Repository\n", encoding="utf-8"
+    )
+    output = tmp_path / "reports"
+
+    exit_code = _run_analyze(
+        repository,
+        output,
+        agents="architecture",
+        architecture_reviewer=_FakeArchitectureReviewer(),
+        fail_on="high",
+    )
+
+    assert exit_code == 0
+    findings = json.loads((output / "findings.json").read_text(encoding="utf-8"))
+    candidate = next(item for item in findings if item["agent"] == "architecture-agent")
+    assert candidate["validation_status"] == "human_review_required"
+    assert candidate["scoring_eligible"] is False
+    assert candidate["severity"] == "info"
+    summary = json.loads((output / "execution-summary.json").read_text(encoding="utf-8"))
+    assert summary["execution"]["agent_runs"]["architecture"]["status"] == "completed"
+    assert summary["execution"]["analyzer_mode"] == (
+        "deterministic-rules+architecture-agent"
+    )

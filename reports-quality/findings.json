@@ -1,0 +1,26 @@
+[
+  {
+    "id": "FF-AGENT-TEST-D581CC1CCF-c1595475e41a",
+    "agent": "test-agent",
+    "sources": [
+      "test-agent"
+    ],
+    "category": "test-quality",
+    "severity": "info",
+    "title": "Secret validation test provides redacted evidence string when testing unredacted rejection",
+    "description": "In test_validation_rejects_missing_or_unredacted_evidence, the test attempts to verify that secret-management findings with unredacted evidence are flagged as unsupported. However, the test sets evidence='password = ***REDACTED***', which contains the redaction marker ***REDACTED***. Consequently, the check 'if ***REDACTED*** not in finding.evidence' in validate_findings evaluates to False, causing the finding to pass validation as supported rather than unsupported.",
+    "recommendation": "Update the test case in test_quality.py to supply an unredacted evidence string (e.g. 'password = raw_secret_value') so that the validation rule correctly triggers and marks the finding as unsupported.",
+    "file": "tests\\unit\\test_quality.py",
+    "line_start": 44,
+    "line_end": 58,
+    "evidence": "evidence='password = ***REDACTED***,",
+    "confidence": 0.95,
+    "rule_id": "FF-AGENT-TEST-D581CC1CCF",
+    "fingerprint": "sha256:c1595475e41a2437beafddf658b5c9f9b66e831f70d50bbf63d4fa7a0ce0f55f",
+    "validation_status": "human_review_required",
+    "validation_messages": [
+      "Related test coverage was found in the repository, so the asserted absence was not semantically confirmed."
+    ],
+    "scoring_eligible": false
+  }
+]

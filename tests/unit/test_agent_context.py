@@ -2,6 +2,7 @@ from pathlib import Path
 
 from forgeflow.domain.models import RepositoryMetadata
 from forgeflow.orchestration.context import (
+    build_architecture_evidence,
     build_security_evidence,
     build_test_evidence,
 )
@@ -76,3 +77,34 @@ def test_test_evidence_pairs_production_and_test_files(tmp_path: Path) -> None:
     assert "FILE: tests/test_payment.py\nROLE: test\n" in evidence.prompt
     assert "RELATED FILES: src/payment.py" in evidence.prompt
     assert "do not invent coverage percentages" in evidence.prompt
+
+
+def test_architecture_evidence_includes_trusted_structure_and_imports(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "sample"\n', encoding="utf-8"
+    )
+    (tmp_path / "src" / "cli.py").write_text(
+        "from src.service import run\n\ndef main():\n    return run()\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "src" / "service.py").write_text(
+        "def run():\n    return True\n", encoding="utf-8"
+    )
+    (tmp_path / "tests" / "test_service.py").write_text(
+        "def test_run():\n    assert True\n", encoding="utf-8"
+    )
+    metadata = _metadata(tmp_path).model_copy(
+        update={"manifests": ["pyproject.toml"]}
+    )
+
+    evidence = build_architecture_evidence(tmp_path, metadata, [])
+
+    assert evidence.files[0] == "pyproject.toml"
+    assert "Trusted structural summary:" in evidence.prompt
+    assert "FILE: src/cli.py\nROLE: production\nMODULE: src\n" in evidence.prompt
+    assert "IMPORTS: src.service" in evidence.prompt
+    assert "Do not infer business requirements" in evidence.prompt

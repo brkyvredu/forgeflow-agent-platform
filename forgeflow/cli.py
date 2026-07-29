@@ -17,11 +17,14 @@ from forgeflow.domain.models import (
     Severity,
 )
 from forgeflow.orchestration import (
+    ArchitectureReviewer,
+    GoogleAdkArchitectureReviewer,
     GoogleAdkSecurityReviewer,
     GoogleAdkTestReviewer,
     SecurityReviewer,
     SpecialistJob,
     TestReviewer,
+    build_architecture_evidence,
     build_security_evidence,
     build_test_evidence,
     run_specialist_jobs,
@@ -79,7 +82,7 @@ def _parser() -> argparse.ArgumentParser:
         "--agents",
         default="none",
         metavar="LIST",
-        help="Comma-separated specialist agents: security, test, or none",
+        help="Comma-separated specialist agents: security, test, architecture, or none",
     )
     return parser
 
@@ -94,7 +97,7 @@ def _normalize_agents(value: str | tuple[str, ...]) -> tuple[str, ...]:
         return ()
     if "none" in requested:
         raise ValueError("--agents none cannot be combined with specialist agents")
-    supported = ("security", "test")
+    supported = ("security", "test", "architecture")
     invalid = sorted(set(requested) - set(supported))
     if invalid:
         raise ValueError(f"Unsupported agent(s): {', '.join(invalid)}")
@@ -121,6 +124,7 @@ def _run_analyze(
     agents: str | tuple[str, ...] = "none",
     security_reviewer: SecurityReviewer | None = None,
     test_reviewer: TestReviewer | None = None,
+    architecture_reviewer: ArchitectureReviewer | None = None,
 ) -> int:
     started_at = datetime.now(UTC)
     started_clock = perf_counter()
@@ -167,6 +171,21 @@ def _run_analyze(
                     name="test",
                     reviewer=test_reviewer or GoogleAdkTestReviewer(),
                     evidence=build_test_evidence(
+                        request.repository,
+                        metadata,
+                        deterministic_findings,
+                        effective_exclusions,
+                    ),
+                )
+            )
+        if "architecture" in selected_agents:
+            jobs.append(
+                SpecialistJob(
+                    name="architecture",
+                    reviewer=(
+                        architecture_reviewer or GoogleAdkArchitectureReviewer()
+                    ),
+                    evidence=build_architecture_evidence(
                         request.repository,
                         metadata,
                         deterministic_findings,
