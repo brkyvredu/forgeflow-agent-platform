@@ -14,7 +14,14 @@ SENSITIVE_NAMES = {
 }
 SENSITIVE_SUFFIXES = {".pem", ".key", ".p12", ".pfx", ".jks", ".keystore"}
 SENSITIVE_PREFIXES = (".env.", "credentials.", "secrets.", "service-account.", "service_account.")
-SENSITIVE_STEMS = {"credentials", "secrets", "service-account", "service_account", "private-key", "private_key"}
+SENSITIVE_STEMS = {
+    "credentials",
+    "secrets",
+    "service-account",
+    "service_account",
+    "private-key",
+    "private_key",
+}
 BINARY_SUFFIXES = {
     ".png",
     ".jpg",

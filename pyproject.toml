@@ -37,6 +37,7 @@ dev = [
 ]
 
 [project.scripts]
+forgeflow = "forgeflow.cli:main"
 forgeflow-mcp = "forgeflow_mcp.server:main"
 
 [tool.setuptools.packages.find]

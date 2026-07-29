@@ -12,3 +12,6 @@ htmlcov/
 target/
 *.log
 .DS_Store
+reports/
+
+*.egg-info/
