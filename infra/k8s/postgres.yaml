@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: forgeflow
+data:
+  001-init.sql: |
+    CREATE EXTENSION IF NOT EXISTS vector;
+    CREATE EXTENSION IF NOT EXISTS pgcrypto;
+    CREATE TABLE IF NOT EXISTS engineering_memory (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      title VARCHAR(200) NOT NULL,
+      content TEXT NOT NULL,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      embedding VECTOR(768) NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS engineering_memory_embedding_hnsw
+      ON engineering_memory USING hnsw (embedding vector_cosine_ops);
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: forgeflow
+spec:
+  selector: { app: postgres }
+  ports: [{ port: 5432 }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: forgeflow
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels: { app: postgres }
+  template:
+    metadata:
+      labels: { app: postgres }
+    spec:
+      securityContext: { runAsNonRoot: true }
+      containers:
+        - name: postgres
+          image: pgvector/pgvector:pg17
+          ports: [{ containerPort: 5432 }]
+          env:
+            - { name: POSTGRES_DB, value: forgeflow }
+            - { name: POSTGRES_USER, value: forgeflow }
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: forgeflow-secrets, key: POSTGRES_PASSWORD }
+          readinessProbe:
+            exec: { command: ['pg_isready', '-U', 'forgeflow', '-d', 'forgeflow'] }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+            - { name: init, mountPath: /docker-entrypoint-initdb.d, readOnly: true }
+      volumes:
+        - name: init
+          configMap: { name: postgres-init }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: ['ReadWriteOnce']
+        resources:
+          requests: { storage: 10Gi }

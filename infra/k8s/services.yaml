@@ -1,0 +1,126 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-server
+  namespace: forgeflow
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: mcp-server }
+  template:
+    metadata:
+      labels: { app: mcp-server }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+      initContainers:
+        - name: repository-clone
+          image: alpine/git:latest
+          command: ["sh", "-c"]
+          args: ['git clone --depth=1 "$REPOSITORY_URL" /workspace/repository']
+          envFrom: [{ configMapRef: { name: forgeflow-config } }]
+          volumeMounts:
+            - { name: repository, mountPath: /workspace }
+      containers:
+        - name: mcp-server
+          image: ghcr.io/your-org/forgeflow-mcp:0.1.0
+          ports: [{ containerPort: 8001 }]
+          envFrom: [{ configMapRef: { name: forgeflow-config } }]
+          volumeMounts:
+            - { name: repository, mountPath: /workspace/repository, readOnly: true }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          readinessProbe:
+            tcpSocket: { port: 8001 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - { name: repository, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-server
+  namespace: forgeflow
+spec:
+  selector: { app: mcp-server }
+  ports: [{ port: 8001, targetPort: 8001 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: java-analysis
+  namespace: forgeflow
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: java-analysis }
+  template:
+    metadata:
+      labels: { app: java-analysis }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: java-analysis
+          image: ghcr.io/your-org/forgeflow-java-analysis:0.1.0
+          ports: [{ containerPort: 8080 }]
+          env:
+            - name: MANAGEMENT_OTLP_TRACING_ENDPOINT
+              value: http://otel-collector:4318/v1/traces
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: 8080 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: java-analysis
+  namespace: forgeflow
+spec:
+  selector: { app: java-analysis }
+  ports: [{ port: 8080, targetPort: 8080 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: forgeflow-agent
+  namespace: forgeflow
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: forgeflow-agent }
+  template:
+    metadata:
+      labels: { app: forgeflow-agent }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: agent
+          image: ghcr.io/your-org/forgeflow-agent:0.1.0
+          ports: [{ containerPort: 8000 }]
+          envFrom:
+            - configMapRef: { name: forgeflow-config }
+            - secretRef: { name: forgeflow-secrets }
+          readinessProbe:
+            httpGet: { path: /list-apps, port: 8000 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: "1", memory: 1Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: forgeflow-agent
+  namespace: forgeflow
+spec:
+  selector: { app: forgeflow-agent }
+  ports: [{ port: 80, targetPort: 8000 }]

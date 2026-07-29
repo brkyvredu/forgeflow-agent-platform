@@ -1,0 +1,70 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: forgeflow
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: internal-service-ingress
+  namespace: forgeflow
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [mcp-server, java-analysis, postgres, otel-collector]
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app: forgeflow-agent } }
+        - podSelector: { matchLabels: { app: mcp-server } }
+        - podSelector: { matchLabels: { app: java-analysis } }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: agent-ingress
+  namespace: forgeflow
+spec:
+  podSelector: { matchLabels: { app: forgeflow-agent } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - { protocol: TCP, port: 8000 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dns-and-https-egress
+  namespace: forgeflow
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [forgeflow-agent, mcp-server, java-analysis]
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16]
+      ports:
+        - { protocol: TCP, port: 443 }
+    - to:
+        - podSelector: { matchLabels: { app: mcp-server } }
+        - podSelector: { matchLabels: { app: java-analysis } }
+        - podSelector: { matchLabels: { app: postgres } }
+        - podSelector: { matchLabels: { app: otel-collector } }

@@ -1,0 +1,14 @@
+{
+  "eval_cases": [
+    {
+      "name": "architecture_review",
+      "starting_user_message": "Inspect the repository and identify three architecture risks. Separate evidence from inference.",
+      "conversation_plan": "The agent should delegate to the architecture specialist, inspect repository structure and manifests, and produce evidence-based findings."
+    },
+    {
+      "name": "test_strategy",
+      "starting_user_message": "Create a layered test strategy for the MCP repository tools, including adversarial cases.",
+      "conversation_plan": "The agent should delegate to the test specialist and cover unit, contract, integration, security, and recovery testing."
+    }
+  ]
+}

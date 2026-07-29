@@ -1,0 +1,6 @@
+name: forgeflow-agent-platform
+agent_directory: forgeflow
+create_params:
+  deployment_target: none
+  session_type: database
+  cicd_runner: github_actions

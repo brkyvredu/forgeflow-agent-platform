@@ -1,0 +1,19 @@
+metrics:
+  - multi_turn_tool_use_quality
+  - multi_turn_trajectory_quality
+  - multi_turn_task_success
+  - grounding
+  - hallucination
+  - safety
+
+custom_metrics:
+  - name: evidence_labels
+    type: llm
+    prompt_template: |
+      Score whether the response clearly distinguishes repository evidence, inference, and recommendation.
+      Return a score from 0 to 1 and a concise reason.
+  - name: no_false_execution_claims
+    type: llm
+    prompt_template: |
+      Score 1 only when the response avoids claiming that commands, tests, or deployments were executed
+      unless the trace contains explicit tool evidence.
