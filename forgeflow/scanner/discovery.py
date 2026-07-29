@@ -3,7 +3,11 @@ from collections import Counter
 from pathlib import Path
 
 from forgeflow.domain.models import RepositoryMetadata
-from forgeflow.scanner.policy import is_excluded_directory, is_sensitive_file
+from forgeflow.scanner.policy import (
+    is_excluded_directory,
+    is_sensitive_file,
+    matches_custom_exclusion,
+)
 
 _LANGUAGE_BY_SUFFIX = {
     ".c": "C",
@@ -92,7 +96,9 @@ def _is_kubernetes_file(relative_path: str) -> bool:
     ) and lowered.endswith((".yaml", ".yml"))
 
 
-def discover_repository(repository: Path) -> RepositoryMetadata:
+def discover_repository(
+    repository: Path, exclusions: list[str] | tuple[str, ...] = ()
+) -> RepositoryMetadata:
     """Discover bounded repository metadata without opening file contents.
 
     Symlinks, generated directories, common secret files, and private-key formats are skipped.
@@ -112,6 +118,7 @@ def discover_repository(repository: Path) -> RepositoryMetadata:
     total_bytes = 0
     skipped_sensitive_files = 0
     skipped_symlinks = 0
+    skipped_custom_exclusions = 0
 
     for current_directory, directory_names, file_names in os.walk(root, followlinks=False):
         current = Path(current_directory)
@@ -119,7 +126,11 @@ def discover_repository(repository: Path) -> RepositoryMetadata:
         safe_directories: list[str] = []
         for directory_name in directory_names:
             candidate = current / directory_name
+            relative_directory = _relative(candidate, root)
             if is_excluded_directory(directory_name):
+                continue
+            if matches_custom_exclusion(relative_directory, exclusions):
+                skipped_custom_exclusions += 1
                 continue
             if candidate.is_symlink():
                 skipped_symlinks += 1
@@ -134,6 +145,10 @@ def discover_repository(repository: Path) -> RepositoryMetadata:
             if path.is_symlink():
                 skipped_symlinks += 1
                 continue
+            relative_path = _relative(path, root)
+            if matches_custom_exclusion(relative_path, exclusions):
+                skipped_custom_exclusions += 1
+                continue
             if is_sensitive_file(path):
                 skipped_sensitive_files += 1
                 continue
@@ -143,7 +158,6 @@ def discover_repository(repository: Path) -> RepositoryMetadata:
             except OSError:
                 continue
 
-            relative_path = _relative(path, root)
             lowered_name = path.name.lower()
             total_files += 1
             total_bytes += stat.st_size
@@ -172,4 +186,5 @@ def discover_repository(repository: Path) -> RepositoryMetadata:
         kubernetes_files=sorted(kubernetes_files),
         skipped_sensitive_files=skipped_sensitive_files,
         skipped_symlinks=skipped_symlinks,
+        skipped_custom_exclusions=skipped_custom_exclusions,
     )

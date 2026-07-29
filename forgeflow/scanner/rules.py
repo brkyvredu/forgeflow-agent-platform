@@ -7,8 +7,10 @@ from pathlib import Path
 from forgeflow.domain.models import Finding, RepositoryMetadata, Severity
 from forgeflow.scanner.policy import (
     is_excluded_directory,
+    is_forgeflow_report_file,
     is_scannable_text_file,
     is_sensitive_file,
+    matches_custom_exclusion,
 )
 
 _MAX_FILE_BYTES = 512_000
@@ -59,18 +61,30 @@ def _relative(path: Path, root: Path) -> Path:
     return Path(path.relative_to(root).as_posix())
 
 
-def _iter_safe_text_files(root: Path) -> list[Path]:
+def _iter_safe_text_files(
+    root: Path, exclusions: list[str] | tuple[str, ...] = ()
+) -> list[Path]:
     files: list[Path] = []
     for current_directory, directory_names, file_names in os.walk(root, followlinks=False):
         current = Path(current_directory)
         directory_names[:] = [
             name
             for name in directory_names
-            if not is_excluded_directory(name) and not (current / name).is_symlink()
+            if not is_excluded_directory(name)
+            and not (current / name).is_symlink()
+            and not matches_custom_exclusion(
+                (current / name).relative_to(root).as_posix(), exclusions
+            )
         ]
         for file_name in file_names:
             path = current / file_name
-            if path.is_symlink() or is_sensitive_file(path) or not is_scannable_text_file(path):
+            if (
+                path.is_symlink()
+                or is_forgeflow_report_file(path)
+                or matches_custom_exclusion(path.relative_to(root).as_posix(), exclusions)
+                or is_sensitive_file(path)
+                or not is_scannable_text_file(path)
+            ):
                 continue
             try:
                 if path.stat().st_size > _MAX_FILE_BYTES:
@@ -295,12 +309,16 @@ def _repository_findings(metadata: RepositoryMetadata) -> list[Finding]:
     return findings
 
 
-def scan_repository(repository: Path, metadata: RepositoryMetadata) -> list[Finding]:
+def scan_repository(
+    repository: Path,
+    metadata: RepositoryMetadata,
+    exclusions: list[str] | tuple[str, ...] = (),
+) -> list[Finding]:
     """Run bounded, read-only deterministic checks over safe repository text files."""
     root = repository.expanduser().resolve(strict=True)
     findings = _repository_findings(metadata)
 
-    for path in _iter_safe_text_files(root):
+    for path in _iter_safe_text_files(root, exclusions):
         lines = _read_lines(path)
         if not lines:
             continue

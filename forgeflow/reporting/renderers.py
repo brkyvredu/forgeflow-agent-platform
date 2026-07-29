@@ -16,11 +16,14 @@ def _finding_markdown(finding: Finding) -> str:
     if finding.evidence:
         evidence = f"\n\n**Evidence:** `{finding.evidence.replace('`', '\\`')}`"
 
+    sources = ", ".join(f"`{source}`" for source in finding.sources)
     return f"""### [{finding.severity.value.upper()}] {finding.title}
 
 - Rule: `{finding.rule_id}`
 - Location: {location}
 - Confidence: {finding.confidence:.2f}
+- Evidence status: `{finding.validation_status.value}`
+- Sources: {sources}
 
 {finding.description}
 
@@ -42,14 +45,21 @@ def _markdown_report(result: AnalysisResult) -> str:
     ) or "- No findings"
     findings = "\n".join(_finding_markdown(finding) for finding in result.findings)
     if not findings:
-        findings = "No deterministic engineering findings were generated."
+        findings = "No supported deterministic engineering findings were generated."
 
     return f"""# ForgeFlow Repository Review
 
 ## Analysis status
 
 This report contains bounded, read-only deterministic repository checks. No repository code was
-executed or modified. Specialist-agent findings will be added in a later v0.2 increment.
+executed or modified. Only evidence-supported findings at or above the configured confidence
+threshold are published. Specialist-agent findings will be added in a later v0.2 increment.
+
+## Engineering score
+
+- Score: **{result.score.value}/100**
+- Risk level: **{result.score.risk_level.capitalize()}**
+- Note: {result.score.disclaimer}
 
 ## Repository
 
@@ -58,6 +68,7 @@ executed or modified. Specialist-agent findings will be added in a later v0.2 in
 - Aggregate bytes: {repository.total_bytes}
 - Sensitive files skipped: {repository.skipped_sensitive_files}
 - Symlinks skipped: {repository.skipped_symlinks}
+- Custom exclusions skipped: {repository.skipped_custom_exclusions}
 
 ## Languages
 
@@ -73,6 +84,14 @@ executed or modified. Specialist-agent findings will be added in a later v0.2 in
 - CI files: {len(repository.ci_files)}
 - Container files: {len(repository.container_files)}
 - Kubernetes files: {len(repository.kubernetes_files)}
+
+## Finding quality
+
+- Raw findings: {result.quality.raw_finding_count}
+- Supported findings: {result.quality.supported_finding_count}
+- Unsupported findings rejected: {result.quality.unsupported_finding_count}
+- Findings below confidence threshold: {result.quality.below_confidence_count}
+- Duplicate findings merged: {result.quality.duplicates_merged}
 
 ## Finding summary
 
@@ -102,6 +121,8 @@ def write_analysis_reports(
         "analysis": {
             "finding_count": len(result.findings),
             "severity_counts": dict(sorted(severity_counts.items())),
+            "quality": result.quality.model_dump(mode="json"),
+            "score": result.score.model_dump(mode="json"),
         },
         "execution": result.execution.model_dump(mode="json"),
     }

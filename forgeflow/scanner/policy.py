@@ -1,4 +1,4 @@
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 EXCLUDED_DIRECTORIES = frozenset(
     {
@@ -32,6 +32,8 @@ SENSITIVE_EXACT_NAMES = frozenset(
     }
 )
 SENSITIVE_SUFFIXES = (".key", ".pem", ".p12", ".pfx", ".jks", ".keystore")
+
+FORGEFLOW_REPORT_NAMES = frozenset({"findings.json", "execution-summary.json", "review.md"})
 
 SCANNABLE_TEXT_SUFFIXES = frozenset(
     {
@@ -89,3 +91,24 @@ def is_scannable_text_file(path: Path) -> bool:
     if lowered in {"jenkinsfile", "makefile"}:
         return True
     return lowered == ".env.example" or path.suffix.lower() in SCANNABLE_TEXT_SUFFIXES
+
+
+def matches_custom_exclusion(relative_path: str, patterns: list[str] | tuple[str, ...]) -> bool:
+    """Match repository-relative POSIX paths against user-provided glob exclusions."""
+    normalized = relative_path.strip("/").replace("\\", "/")
+    path = PurePosixPath(normalized)
+    for raw_pattern in patterns:
+        pattern = raw_pattern.strip().strip("/").replace("\\", "/")
+        if not pattern:
+            continue
+        if pattern.endswith("/**"):
+            prefix = pattern[:-3].rstrip("/")
+            if normalized == prefix or normalized.startswith(f"{prefix}/"):
+                return True
+        if path.match(pattern):
+            return True
+    return False
+
+
+def is_forgeflow_report_file(path: Path) -> bool:
+    return path.name.lower() in FORGEFLOW_REPORT_NAMES
