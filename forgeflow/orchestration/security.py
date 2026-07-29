@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from hashlib import sha256
 from pathlib import Path
@@ -74,12 +74,12 @@ class GoogleAdkSecurityReviewer:
 
     async def review(self, evidence: RepositoryEvidence) -> list[Finding]:
         from dotenv import load_dotenv
-
-        from forgeflow.telemetry import configure_telemetry
         from google.adk.agents import Agent
         from google.adk.runners import Runner
         from google.adk.sessions import InMemorySessionService
         from google.genai import types
+
+        from forgeflow.telemetry import configure_telemetry
 
         load_dotenv()
         configure_telemetry()
@@ -99,7 +99,7 @@ must always be replaced with ***REDACTED***. Prefer an empty findings list over 
 """,
             output_schema=SecurityReviewOutput,
         )
-        session_service = InMemorySessionService()
+        session_service = InMemorySessionService()  # type: ignore[no-untyped-call]
         session_id = uuid4().hex
         user_id = "forgeflow-cli"
         app_name = "forgeflow-security-review"
@@ -136,3 +136,4 @@ must always be replaced with ***REDACTED***. Prefer an empty findings list over 
         except ValueError as exc:
             raise SecurityReviewError("Security agent returned invalid structured output") from exc
         return candidates_to_findings(output)
+
