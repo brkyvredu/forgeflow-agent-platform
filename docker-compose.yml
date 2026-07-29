@@ -4,7 +4,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-forgeflow}
       POSTGRES_USER: ${POSTGRES_USER:-forgeflow}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-forgeflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./db/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
@@ -68,7 +68,7 @@ services:
     environment:
       MCP_SERVER_URL: http://mcp-server:8001/mcp
       JAVA_ANALYSIS_URL: http://java-analysis:8080
-      DATABASE_URL: postgresql://forgeflow:forgeflow@postgres:5432/forgeflow
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-forgeflow}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-forgeflow}"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
     depends_on:
       postgres:

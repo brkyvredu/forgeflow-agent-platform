@@ -19,8 +19,8 @@ spec:
       initContainers:
         - name: repository-clone
           image: alpine/git:latest
-          command: ["sh", "-c"]
-          args: ['git clone --depth=1 "$REPOSITORY_URL" /workspace/repository']
+          command: ["git"]
+          args: ["clone", "--depth=1", "$(REPOSITORY_URL)", "/workspace/repository"]
           envFrom: [{ configMapRef: { name: forgeflow-config } }]
           volumeMounts:
             - { name: repository, mountPath: /workspace }
