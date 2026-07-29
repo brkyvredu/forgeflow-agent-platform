@@ -128,6 +128,8 @@ forgeflow analyze --repo . --output reports
 forgeflow analyze --repo . --fail-on high --min-confidence 0.80
 forgeflow analyze --repo . --exclude "examples/**"
 forgeflow analyze --repo . --agents security
+forgeflow analyze --repo . --agents test
+forgeflow analyze --repo . --agents security,test
 ```
 
 The command writes `review.md`, `findings.json`, and `execution-summary.json`. It performs bounded
@@ -135,12 +137,14 @@ repository discovery and evidence-backed checks for credential-like literals, un
 execution, mutable Docker base tags, root container execution, missing tests, and missing CI.
 Sensitive files, generated directories, oversized text files, symlinks, and configured glob
 exclusions are skipped. Findings are evidence-validated, deduplicated, and assigned a bounded
-engineering prioritization score. The optional `--agents security` mode runs an isolated Google
-ADK reviewer over a bounded, line-numbered, credential-redacted evidence bundle. Agent findings
-pass through the same confidence, evidence-validation, deduplication, and scoring pipeline. An agent
-provider failure is recorded as a warning without discarding deterministic results. See
-[`docs/security-agent.md`](docs/security-agent.md), [`docs/rules.md`](docs/rules.md), and
-[`docs/quality-gates.md`](docs/quality-gates.md).
+engineering prioritization score. The optional `--agents security`, `--agents test`, and `--agents security,test` modes run isolated
+Google ADK reviewers over bounded, line-numbered, credential-redacted evidence bundles. The Test
+Agent receives role-labeled production and test files with likely relationships annotated by trusted
+code. Agent findings pass through the same confidence, evidence-validation, deduplication, and
+scoring pipeline. Specialist reviews run concurrently, and one provider failure is recorded as a
+warning without discarding deterministic or other successful results. See
+[`docs/security-agent.md`](docs/security-agent.md), [`docs/test-agent.md`](docs/test-agent.md),
+[`docs/rules.md`](docs/rules.md), and [`docs/quality-gates.md`](docs/quality-gates.md).
 
 Run tests:
 

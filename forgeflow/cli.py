@@ -18,8 +18,13 @@ from forgeflow.domain.models import (
 )
 from forgeflow.orchestration import (
     GoogleAdkSecurityReviewer,
+    GoogleAdkTestReviewer,
     SecurityReviewer,
+    SpecialistJob,
+    TestReviewer,
     build_security_evidence,
+    build_test_evidence,
+    run_specialist_jobs,
 )
 from forgeflow.reporting import process_findings, write_analysis_reports
 from forgeflow.scanner import discover_repository, scan_repository
@@ -72,11 +77,28 @@ def _parser() -> argparse.ArgumentParser:
     )
     analyze.add_argument(
         "--agents",
-        choices=["none", "security"],
         default="none",
-        help="Run optional specialist agents after deterministic analysis",
+        metavar="LIST",
+        help="Comma-separated specialist agents: security, test, or none",
     )
     return parser
+
+
+def _normalize_agents(value: str | tuple[str, ...]) -> tuple[str, ...]:
+    if isinstance(value, tuple):
+        requested = [item.strip().lower() for item in value]
+    else:
+        requested = [item.strip().lower() for item in value.split(",")]
+    requested = [item for item in requested if item]
+    if not requested or requested == ["none"]:
+        return ()
+    if "none" in requested:
+        raise ValueError("--agents none cannot be combined with specialist agents")
+    supported = ("security", "test")
+    invalid = sorted(set(requested) - set(supported))
+    if invalid:
+        raise ValueError(f"Unsupported agent(s): {', '.join(invalid)}")
+    return tuple(agent for agent in supported if agent in requested)
 
 
 def _quality_gate_failed(findings: list[Finding], fail_on: str) -> bool:
@@ -93,8 +115,9 @@ def _run_analyze(
     min_confidence: float = 0.0,
     fail_on: str = "none",
     exclusions: list[str] | None = None,
-    agents: str = "none",
+    agents: str | tuple[str, ...] = "none",
     security_reviewer: SecurityReviewer | None = None,
+    test_reviewer: TestReviewer | None = None,
 ) -> int:
     started_at = datetime.now(UTC)
     started_clock = perf_counter()
@@ -120,40 +143,42 @@ def _run_analyze(
             request.repository, metadata, effective_exclusions
         )
         raw_findings = list(deterministic_findings)
+        selected_agents = _normalize_agents(agents)
+        jobs: list[SpecialistJob] = []
+        if "security" in selected_agents:
+            jobs.append(
+                SpecialistJob(
+                    name="security",
+                    reviewer=security_reviewer or GoogleAdkSecurityReviewer(),
+                    evidence=build_security_evidence(
+                        request.repository,
+                        metadata,
+                        deterministic_findings,
+                        effective_exclusions,
+                    ),
+                )
+            )
+        if "test" in selected_agents:
+            jobs.append(
+                SpecialistJob(
+                    name="test",
+                    reviewer=test_reviewer or GoogleAdkTestReviewer(),
+                    evidence=build_test_evidence(
+                        request.repository,
+                        metadata,
+                        deterministic_findings,
+                        effective_exclusions,
+                    ),
+                )
+            )
+
         agent_runs: dict[str, AgentRunSummary] = {}
         agent_notes: list[str] = []
-        if agents == "security":
-            evidence = build_security_evidence(
-                request.repository,
-                metadata,
-                deterministic_findings,
-                effective_exclusions,
-            )
-            reviewer = security_reviewer or GoogleAdkSecurityReviewer()
-            agent_started = perf_counter()
-            try:
-                agent_findings = asyncio.run(reviewer.review(evidence))
-            except Exception as exc:  # noqa: BLE001 - specialist failure must be isolated
-                agent_runs["security"] = AgentRunSummary(
-                    status="failed",
-                    duration_ms=max(0, round((perf_counter() - agent_started) * 1000)),
-                    context_files=len(evidence.files),
-                    context_chars=evidence.character_count,
-                    prompt_risk_files=len(evidence.prompt_risk_files),
-                    message=f"{type(exc).__name__}: review failed",
-                )
-                agent_notes.append("Security agent failed; deterministic analysis was preserved.")
-            else:
-                raw_findings.extend(agent_findings)
-                agent_runs["security"] = AgentRunSummary(
-                    status="completed",
-                    finding_count=len(agent_findings),
-                    duration_ms=max(0, round((perf_counter() - agent_started) * 1000)),
-                    context_files=len(evidence.files),
-                    context_chars=evidence.character_count,
-                    prompt_risk_files=len(evidence.prompt_risk_files),
-                    message="Evidence bundle was truncated." if evidence.truncated else None,
-                )
+        for specialist_result in asyncio.run(run_specialist_jobs(jobs)):
+            raw_findings.extend(specialist_result.findings)
+            agent_runs[specialist_result.name] = specialist_result.summary
+            if specialist_result.note:
+                agent_notes.append(specialist_result.note)
         findings, quality, score = process_findings(
             request.repository,
             raw_findings,
@@ -181,9 +206,8 @@ def _run_analyze(
             finished_at=finished_at,
             duration_ms=duration_ms,
             analyzer_mode=(
-                "deterministic-rules+security-agent"
-                if agents == "security"
-                else "deterministic-rules"
+                "deterministic-rules"
+                + "".join(f"+{agent}-agent" for agent in selected_agents)
             ),
             notes=[
                 "Deterministic repository discovery completed.",
