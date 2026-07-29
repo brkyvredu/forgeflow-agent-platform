@@ -125,14 +125,18 @@ Run a deterministic, read-only repository analysis:
 
 ```bash
 forgeflow analyze --repo . --output reports
+forgeflow analyze --repo . --fail-on high --min-confidence 0.80
+forgeflow analyze --repo . --exclude "examples/**"
 ```
 
 The command writes `review.md`, `findings.json`, and `execution-summary.json`. It performs bounded
 repository discovery and evidence-backed checks for credential-like literals, unsafe shell
 execution, mutable Docker base tags, root container execution, missing tests, and missing CI.
-Sensitive files, generated directories, oversized text files, and symlinks are excluded.
-Specialist-agent findings are introduced in a later v0.2 increment. See
-[`docs/rules.md`](docs/rules.md) for the current rule catalog and known limitations.
+Sensitive files, generated directories, oversized text files, symlinks, and configured glob
+exclusions are skipped. Findings are evidence-validated, deduplicated, and assigned a bounded
+engineering prioritization score. Specialist-agent findings are introduced in a later v0.2
+increment. See [`docs/rules.md`](docs/rules.md) for the rule catalog and
+[`docs/quality-gates.md`](docs/quality-gates.md) for validation and CI behavior.
 
 Run tests:
 
