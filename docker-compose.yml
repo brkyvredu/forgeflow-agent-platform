@@ -41,6 +41,7 @@ services:
     environment:
       REPOSITORY_ROOT: /workspace/repository
       OTEL_SERVICE_NAME: forgeflow-mcp
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       MCP_HOST: 0.0.0.0
       MCP_PORT: "8001"
     volumes:
