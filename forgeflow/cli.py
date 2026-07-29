@@ -1,5 +1,6 @@
 import argparse
 import sys
+from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
@@ -8,7 +9,7 @@ from pydantic import ValidationError
 
 from forgeflow.domain.models import AnalysisRequest, AnalysisResult, ExecutionSummary
 from forgeflow.reporting import write_analysis_reports
-from forgeflow.scanner import discover_repository
+from forgeflow.scanner import discover_repository, scan_repository
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -38,15 +39,17 @@ def _run_analyze(repository: Path, output: Path) -> int:
     try:
         request = AnalysisRequest(repository=repository, output_directory=output)
         metadata = discover_repository(request.repository)
+        findings = scan_repository(request.repository, metadata)
     except (OSError, ValueError, ValidationError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
     finished_at = datetime.now(UTC)
     duration_ms = max(0, round((perf_counter() - started_clock) * 1000))
+    severity_counts = Counter(finding.severity.value for finding in findings)
     result = AnalysisResult(
         repository=metadata,
-        findings=[],
+        findings=findings,
         execution=ExecutionSummary(
             status="completed",
             started_at=started_at,
@@ -54,6 +57,7 @@ def _run_analyze(repository: Path, output: Path) -> int:
             duration_ms=duration_ms,
             notes=[
                 "Deterministic repository discovery completed.",
+                f"Generated {len(findings)} deterministic finding(s).",
                 "Specialist-agent analysis is not enabled in this increment.",
             ],
         ),
@@ -62,9 +66,15 @@ def _run_analyze(repository: Path, output: Path) -> int:
         result, request.output_directory
     )
 
-    print(f"Repository discovery completed: {request.repository}")
+    counts = ", ".join(
+        f"{severity}={severity_counts[severity]}"
+        for severity in ("critical", "high", "medium", "low", "info")
+        if severity_counts[severity]
+    )
+    print(f"Repository analysis completed: {request.repository}")
+    print(f"Findings: {len(findings)}" + (f" ({counts})" if counts else ""))
     print(f"Review: {review_path}")
-    print(f"Findings: {findings_path}")
+    print(f"Findings JSON: {findings_path}")
     print(f"Execution summary: {summary_path}")
     return 0
 

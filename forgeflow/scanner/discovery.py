@@ -3,39 +3,7 @@ from collections import Counter
 from pathlib import Path
 
 from forgeflow.domain.models import RepositoryMetadata
-
-_EXCLUDED_DIRECTORIES = frozenset(
-    {
-        ".git",
-        ".idea",
-        ".mypy_cache",
-        ".pytest_cache",
-        ".ruff_cache",
-        ".tox",
-        ".venv",
-        ".vscode",
-        "__pycache__",
-        "build",
-        "coverage",
-        "dist",
-        "node_modules",
-        "reports",
-        "target",
-        "venv",
-    }
-)
-
-_SENSITIVE_EXACT_NAMES = frozenset(
-    {
-        ".env",
-        "credentials.json",
-        "service-account.json",
-        "secrets.json",
-        "id_rsa",
-        "id_ed25519",
-    }
-)
-_SENSITIVE_SUFFIXES = (".key", ".pem", ".p12", ".pfx", ".jks", ".keystore")
+from forgeflow.scanner.policy import is_excluded_directory, is_sensitive_file
 
 _LANGUAGE_BY_SUFFIX = {
     ".c": "C",
@@ -89,15 +57,6 @@ def _relative(path: Path, root: Path) -> str:
     return path.relative_to(root).as_posix()
 
 
-def _is_sensitive_file(path: Path) -> bool:
-    lowered = path.name.lower()
-    return (
-        lowered in _SENSITIVE_EXACT_NAMES
-        or lowered.startswith(".env.")
-        or lowered.endswith(_SENSITIVE_SUFFIXES)
-    )
-
-
 def _is_test_directory(path: Path) -> bool:
     lowered = path.name.lower()
     return lowered in {"test", "tests", "spec", "specs", "__tests__"}
@@ -115,7 +74,11 @@ def _is_ci_file(relative_path: str) -> bool:
 
 def _is_container_file(path: Path) -> bool:
     lowered = path.name.lower()
-    return lowered == "dockerfile" or lowered.startswith("dockerfile.") or lowered in _CONTAINER_NAMES
+    return (
+        lowered == "dockerfile"
+        or lowered.startswith("dockerfile.")
+        or lowered in _CONTAINER_NAMES
+    )
 
 
 def _is_kubernetes_file(relative_path: str) -> bool:
@@ -156,7 +119,7 @@ def discover_repository(repository: Path) -> RepositoryMetadata:
         safe_directories: list[str] = []
         for directory_name in directory_names:
             candidate = current / directory_name
-            if directory_name.lower() in _EXCLUDED_DIRECTORIES:
+            if is_excluded_directory(directory_name):
                 continue
             if candidate.is_symlink():
                 skipped_symlinks += 1
@@ -171,7 +134,7 @@ def discover_repository(repository: Path) -> RepositoryMetadata:
             if path.is_symlink():
                 skipped_symlinks += 1
                 continue
-            if _is_sensitive_file(path):
+            if is_sensitive_file(path):
                 skipped_sensitive_files += 1
                 continue
 

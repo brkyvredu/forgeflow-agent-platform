@@ -1,7 +1,31 @@
 import json
+from collections import Counter
 from pathlib import Path
 
-from forgeflow.domain.models import AnalysisResult
+from forgeflow.domain.models import AnalysisResult, Finding
+
+
+def _finding_markdown(finding: Finding) -> str:
+    location = "Repository-wide"
+    if finding.file is not None:
+        location = f"`{finding.file.as_posix()}`"
+        if finding.line_start is not None:
+            location += f":{finding.line_start}"
+
+    evidence = ""
+    if finding.evidence:
+        evidence = f"\n\n**Evidence:** `{finding.evidence.replace('`', '\\`')}`"
+
+    return f"""### [{finding.severity.value.upper()}] {finding.title}
+
+- Rule: `{finding.rule_id}`
+- Location: {location}
+- Confidence: {finding.confidence:.2f}
+
+{finding.description}
+
+**Recommendation:** {finding.recommendation}{evidence}
+"""
 
 
 def _markdown_report(result: AnalysisResult) -> str:
@@ -10,13 +34,22 @@ def _markdown_report(result: AnalysisResult) -> str:
         f"- {language}: {count} file(s)" for language, count in repository.languages.items()
     ) or "- No recognized source files"
     manifests = "\n".join(f"- `{item}`" for item in repository.manifests) or "- None detected"
+    severity_counts = Counter(finding.severity.value for finding in result.findings)
+    finding_summary = "\n".join(
+        f"- {severity.capitalize()}: {severity_counts[severity]}"
+        for severity in ("critical", "high", "medium", "low", "info")
+        if severity_counts[severity]
+    ) or "- No findings"
+    findings = "\n".join(_finding_markdown(finding) for finding in result.findings)
+    if not findings:
+        findings = "No deterministic engineering findings were generated."
 
     return f"""# ForgeFlow Repository Review
 
 ## Analysis status
 
-This report contains deterministic repository discovery only. Specialist-agent findings will be
-added in the next v0.2 development increment. No repository code was executed or modified.
+This report contains bounded, read-only deterministic repository checks. No repository code was
+executed or modified. Specialist-agent findings will be added in a later v0.2 increment.
 
 ## Repository
 
@@ -41,23 +74,35 @@ added in the next v0.2 development increment. No repository code was executed or
 - Container files: {len(repository.container_files)}
 - Kubernetes files: {len(repository.kubernetes_files)}
 
+## Finding summary
+
+{finding_summary}
+
 ## Findings
 
-No engineering findings were generated in this discovery-only increment.
+{findings}
 """
 
 
-def write_analysis_reports(result: AnalysisResult, output_directory: Path) -> tuple[Path, Path, Path]:
+def write_analysis_reports(
+    result: AnalysisResult, output_directory: Path
+) -> tuple[Path, Path, Path]:
     output_directory.mkdir(parents=True, exist_ok=True)
     findings_path = output_directory / "findings.json"
     summary_path = output_directory / "execution-summary.json"
     review_path = output_directory / "review.md"
 
+    findings_payload = [finding.model_dump(mode="json") for finding in result.findings]
     findings_path.write_text(
-        json.dumps(result.findings, indent=2, ensure_ascii=False), encoding="utf-8"
+        json.dumps(findings_payload, indent=2, ensure_ascii=False), encoding="utf-8"
     )
+    severity_counts = Counter(finding.severity.value for finding in result.findings)
     summary_payload = {
         "repository": result.repository.model_dump(mode="json"),
+        "analysis": {
+            "finding_count": len(result.findings),
+            "severity_counts": dict(sorted(severity_counts.items())),
+        },
         "execution": result.execution.model_dump(mode="json"),
     }
     summary_path.write_text(
