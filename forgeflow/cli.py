@@ -105,7 +105,10 @@ def _quality_gate_failed(findings: list[Finding], fail_on: str) -> bool:
     if fail_on == "none":
         return False
     threshold = _FAIL_ORDER[Severity(fail_on)]
-    return any(_FAIL_ORDER[finding.severity] <= threshold for finding in findings)
+    return any(
+        finding.scoring_eligible and _FAIL_ORDER[finding.severity] <= threshold
+        for finding in findings
+    )
 
 
 def _run_analyze(
@@ -212,7 +215,8 @@ def _run_analyze(
             notes=[
                 "Deterministic repository discovery completed.",
                 f"Generated {len(deterministic_findings)} deterministic finding(s).",
-                f"Published {quality.supported_finding_count} supported finding(s).",
+                f"Published {quality.supported_finding_count} evidence-backed finding(s).",
+                f"Eligible for score and quality gate: {quality.scoring_eligible_count}.",
                 *agent_notes,
             ],
             agent_runs=agent_runs,
@@ -229,7 +233,10 @@ def _run_analyze(
     )
     print(f"Repository analysis completed: {request.repository}")
     print(f"Findings: {len(findings)}" + (f" ({counts})" if counts else ""))
-    print(f"Engineering score: {score.value}/100 (risk={score.risk_level})")
+    print(
+        f"Engineering score: {score.value}/100 (risk={score.risk_level}; "
+        f"eligible={quality.scoring_eligible_count})"
+    )
     print(f"Review: {review_path}")
     print(f"Findings JSON: {findings_path}")
     print(f"Execution summary: {summary_path}")

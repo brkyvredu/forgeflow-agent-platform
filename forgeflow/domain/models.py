@@ -18,8 +18,14 @@ class Severity(StrEnum):
 
 class ValidationStatus(StrEnum):
     UNVALIDATED = "unvalidated"
-    SUPPORTED = "supported"
+    EVIDENCE_MATCHED = "evidence_matched"
+    SEMANTICALLY_VERIFIED = "semantically_verified"
+    DETERMINISTICALLY_CONFIRMED = "deterministically_confirmed"
+    HUMAN_REVIEW_REQUIRED = "human_review_required"
     UNSUPPORTED = "unsupported"
+
+    # Backward-compatible enum alias for callers that only require literal evidence support.
+    SUPPORTED = "evidence_matched"
 
 
 class Finding(BaseModel):
@@ -40,6 +46,7 @@ class Finding(BaseModel):
     fingerprint: str = ""
     validation_status: ValidationStatus = ValidationStatus.UNVALIDATED
     validation_messages: list[str] = Field(default_factory=list)
+    scoring_eligible: bool = False
 
     @model_validator(mode="after")
     def validate_and_identify(self) -> Finding:
@@ -114,6 +121,11 @@ class AnalysisQuality(BaseModel):
     unsupported_finding_count: int = Field(ge=0)
     duplicates_merged: int = Field(ge=0)
     below_confidence_count: int = Field(ge=0)
+    evidence_matched_count: int = Field(default=0, ge=0)
+    semantically_verified_count: int = Field(default=0, ge=0)
+    deterministically_confirmed_count: int = Field(default=0, ge=0)
+    human_review_count: int = Field(default=0, ge=0)
+    scoring_eligible_count: int = Field(default=0, ge=0)
 
 
 class AnalysisScore(BaseModel):

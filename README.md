@@ -140,11 +140,14 @@ exclusions are skipped. Findings are evidence-validated, deduplicated, and assig
 engineering prioritization score. The optional `--agents security`, `--agents test`, and `--agents security,test` modes run isolated
 Google ADK reviewers over bounded, line-numbered, credential-redacted evidence bundles. The Test
 Agent receives role-labeled production and test files with likely relationships annotated by trusted
-code. Agent findings pass through the same confidence, evidence-validation, deduplication, and
-scoring pipeline. Specialist reviews run concurrently, and one provider failure is recorded as a
-warning without discarding deterministic or other successful results. See
+code. Agent findings pass through confidence filtering, literal evidence validation, semantic
+verification, deduplication, and reporting. Only semantically verified or deterministically
+confirmed findings affect the engineering score and `--fail-on`; ambiguous agent candidates remain
+visible for human review without failing CI. Specialist reviews run concurrently, and one provider
+failure is recorded as a warning without discarding deterministic or other successful results. See
 [`docs/security-agent.md`](docs/security-agent.md), [`docs/test-agent.md`](docs/test-agent.md),
-[`docs/rules.md`](docs/rules.md), and [`docs/quality-gates.md`](docs/quality-gates.md).
+[`docs/finding-quality.md`](docs/finding-quality.md), [`docs/rules.md`](docs/rules.md), and
+[`docs/quality-gates.md`](docs/quality-gates.md).
 
 Run tests:
 
