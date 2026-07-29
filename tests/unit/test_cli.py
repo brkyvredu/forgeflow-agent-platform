@@ -2,7 +2,9 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from forgeflow.cli import _run_analyze
+import pytest
+
+from forgeflow.cli import _normalize_agents, _run_analyze
 
 if TYPE_CHECKING:
     from forgeflow.domain.models import Finding
@@ -142,3 +144,122 @@ def test_analyze_preserves_deterministic_results_when_security_agent_fails(
     summary = json.loads((output / "execution-summary.json").read_text(encoding="utf-8"))
     assert summary["execution"]["status"] == "completed_with_warnings"
     assert summary["execution"]["agent_runs"]["security"]["status"] == "failed"
+
+
+class _FakeTestReviewer:
+    async def review(self, evidence: "RepositoryEvidence") -> list["Finding"]:
+        from forgeflow.domain.models import Finding, Severity
+
+        return [
+            Finding(
+                agent="test-agent",
+                category="missing-boundary-test",
+                severity=Severity.MEDIUM,
+                title="Zero amount boundary is not verified",
+                description="The amount boundary lacks a focused test.",
+                recommendation="Add zero and negative amount tests.",
+                file=Path("payment.py"),
+                line_start=2,
+                line_end=2,
+                evidence="return amount > 0",
+                confidence=0.91,
+                rule_id="FF-AGENT-TEST-TEST",
+            )
+        ]
+
+
+class _FailingTestReviewer:
+    async def review(self, evidence: "RepositoryEvidence") -> list["Finding"]:
+        raise RuntimeError("provider unavailable")
+
+
+def test_agent_selection_accepts_comma_separated_agents() -> None:
+    assert _normalize_agents("test,security") == ("security", "test")
+    assert _normalize_agents("none") == ()
+
+
+def test_agent_selection_rejects_unknown_or_mixed_none() -> None:
+    with pytest.raises(ValueError, match="Unsupported agent"):
+        _normalize_agents("release")
+    with pytest.raises(ValueError, match="cannot be combined"):
+        _normalize_agents("none,test")
+
+
+def test_analyze_runs_test_agent_and_publishes_supported_finding(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    (repository / "tests").mkdir()
+    (repository / "payment.py").write_text(
+        "def charge(amount):\n    return amount > 0\n", encoding="utf-8"
+    )
+    (repository / "tests" / "test_payment.py").write_text(
+        "def test_charge():\n    assert True\n", encoding="utf-8"
+    )
+    output = tmp_path / "reports"
+
+    exit_code = _run_analyze(
+        repository,
+        output,
+        agents="test",
+        test_reviewer=_FakeTestReviewer(),
+    )
+
+    assert exit_code == 0
+    findings = json.loads((output / "findings.json").read_text(encoding="utf-8"))
+    assert any(item["agent"] == "test-agent" for item in findings)
+    summary = json.loads((output / "execution-summary.json").read_text(encoding="utf-8"))
+    assert summary["execution"]["agent_runs"]["test"]["status"] == "completed"
+    assert summary["execution"]["analyzer_mode"] == "deterministic-rules+test-agent"
+
+
+def test_analyze_runs_security_and_test_agents_together(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    (repository / "tests").mkdir()
+    (repository / "app.py").write_text("eval(user_input)\n", encoding="utf-8")
+    (repository / "payment.py").write_text(
+        "def charge(amount):\n    return amount > 0\n", encoding="utf-8"
+    )
+    (repository / "tests" / "test_payment.py").write_text(
+        "def test_charge():\n    assert True\n", encoding="utf-8"
+    )
+    output = tmp_path / "reports"
+
+    exit_code = _run_analyze(
+        repository,
+        output,
+        agents="security,test",
+        security_reviewer=_FakeSecurityReviewer(),
+        test_reviewer=_FakeTestReviewer(),
+    )
+
+    assert exit_code == 0
+    findings = json.loads((output / "findings.json").read_text(encoding="utf-8"))
+    assert {item["agent"] for item in findings} >= {"security-agent", "test-agent"}
+    summary = json.loads((output / "execution-summary.json").read_text(encoding="utf-8"))
+    assert set(summary["execution"]["agent_runs"]) == {"security", "test"}
+    assert (
+        summary["execution"]["analyzer_mode"]
+        == "deterministic-rules+security-agent+test-agent"
+    )
+
+
+def test_test_agent_failure_does_not_discard_security_result(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    (repository / "app.py").write_text("eval(user_input)\n", encoding="utf-8")
+    output = tmp_path / "reports"
+
+    exit_code = _run_analyze(
+        repository,
+        output,
+        agents="security,test",
+        security_reviewer=_FakeSecurityReviewer(),
+        test_reviewer=_FailingTestReviewer(),
+    )
+
+    assert exit_code == 0
+    summary = json.loads((output / "execution-summary.json").read_text(encoding="utf-8"))
+    assert summary["execution"]["status"] == "completed_with_warnings"
+    assert summary["execution"]["agent_runs"]["security"]["status"] == "completed"
+    assert summary["execution"]["agent_runs"]["test"]["status"] == "failed"
