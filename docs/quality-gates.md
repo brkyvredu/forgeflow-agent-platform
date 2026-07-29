@@ -1,19 +1,24 @@
 # Finding quality and CI gates
 
-ForgeFlow publishes only findings that pass bounded evidence validation. A file-scoped finding must
-reference a repository-relative file, a valid line range, and evidence supported by that range.
+ForgeFlow first performs bounded literal evidence validation. A file-scoped finding must reference
+a repository-relative file, a valid line range, and evidence supported by that range.
 Secret-management evidence must contain the `***REDACTED***` marker. Unsupported candidates are
 counted in `execution-summary.json` but are not written to `findings.json` or the review body.
+
+Evidence matching alone does not make an agent claim score-eligible. Specialist findings then pass
+through a bounded semantic verifier. The resulting verification levels are documented in
+[`finding-quality.md`](finding-quality.md).
 
 ## Deduplication
 
 The stable finding fingerprint combines the rule identifier, normalized file, starting line, and
 normalized title. Candidates with the same fingerprint are merged, their contributing agents are
-retained in `sources`, and the highest confidence is used.
+retained in `sources`, the strongest verification state is retained, and the highest confidence is
+used.
 
 ## Engineering score
 
-The score starts at 100 and applies these prioritization deductions:
+The score starts at 100 and applies deductions only to findings with `scoring_eligible: true`:
 
 | Severity | Deduction |
 |---|---:|
@@ -34,6 +39,9 @@ forgeflow analyze --repo . --min-confidence 0.80
 forgeflow analyze --repo . --exclude "examples/**" --exclude "vendor/**"
 ```
 
-`--fail-on` still writes all reports. It returns exit code `1` when a supported finding meets or
-exceeds the selected severity, `0` when the gate passes, and `2` for invalid input or analysis
-failure. Exclusions are repository-relative glob patterns and may be repeated. When the output directory is inside the analyzed repository, ForgeFlow automatically excludes it to prevent report feedback from becoming a new finding.
+`--fail-on` still writes all reports. It returns exit code `1` only when a scoring-eligible finding
+meets or exceeds the selected severity, `0` when the gate passes, and `2` for invalid input or
+analysis failure. Human-review candidates remain visible but cannot fail CI. Exclusions are
+repository-relative glob patterns and may be repeated. When the output directory is inside the
+analyzed repository, ForgeFlow automatically excludes it to prevent report feedback from becoming
+a new finding.
