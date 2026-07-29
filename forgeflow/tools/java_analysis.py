@@ -12,8 +12,8 @@ _tracer = trace.get_tracer(__name__)
 async def analyze_java_source(source_code: str) -> dict[str, Any]:
     """Analyze Java source and return bounded structural metrics.
 
-    Use this tool for Java files or Java snippets. It performs static metrics only and never executes
-    supplied code.
+    Use this tool for Java files or Java snippets. It performs static metrics only and never
+    executes supplied code.
     """
     enforce_safe_prompt(source_code)
     settings = get_settings()
@@ -27,4 +27,7 @@ async def analyze_java_source(source_code: str) -> dict[str, Any]:
                 json={"sourceCode": source_code},
             )
             response.raise_for_status()
-            return response.json()
+            payload: object = response.json()
+            if not isinstance(payload, dict):
+                raise ValueError("Java analysis service returned a non-object response")
+            return {str(key): value for key, value in payload.items()}

@@ -10,7 +10,10 @@ class PromptRisk:
 
 _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("instruction_override", re.compile(r"ignore (all|any|the) previous instructions", re.I)),
-    ("secret_exfiltration", re.compile(r"(print|show|reveal|dump).*(secret|token|password|api key)", re.I)),
+    (
+        "secret_exfiltration",
+        re.compile(r"(print|show|reveal|dump).*(secret|token|password|api key)", re.I),
+    ),
     ("unsafe_shell", re.compile(r"\b(rm\s+-rf|curl.+\|\s*(ba)?sh|powershell.+iex)\b", re.I)),
     ("path_escape", re.compile(r"(?:^|[\\/])\.\.(?:[\\/]|$)")),
 )

@@ -41,6 +41,8 @@ services:
     environment:
       REPOSITORY_ROOT: /workspace/repository
       OTEL_SERVICE_NAME: forgeflow-mcp
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: "8001"
     volumes:
       - ./:/workspace/repository:ro
     depends_on:

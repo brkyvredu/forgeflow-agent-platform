@@ -16,14 +16,14 @@ from forgeflow.scanner.policy import (
 _MAX_FILE_BYTES = 512_000
 _MAX_FINDINGS_PER_RULE = 50
 
-_SECRET_KEY = (
+_CREDENTIAL_KEY_PATTERN = (
     r"api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret|password|passwd|secret"
 )
 _QUOTED_SECRET_ASSIGNMENT = re.compile(
-    rf"(?i)[\"']?\b({_SECRET_KEY})\b[\"']?\s*[:=]\s*([\"'])([^\"']{{8,}})\2"
+    rf"(?i)[\"']?\b({_CREDENTIAL_KEY_PATTERN})\b[\"']?\s*[:=]\s*([\"'])([^\"']{{8,}})\2"
 )
 _UNQUOTED_SECRET_ASSIGNMENT = re.compile(
-    rf"(?i)^\s*({_SECRET_KEY})\s*[:=]\s*([^\s#;,]{{8,}})\s*$"
+    rf"(?i)^\s*({_CREDENTIAL_KEY_PATTERN})\s*[:=]\s*([^\s#;,]{{8,}})\s*$"
 )
 _SHELL_TRUE = re.compile(r"\bshell\s*=\s*True\b")
 _DOCKER_LATEST = re.compile(r"(?i)^\s*FROM\s+\S+:latest(?:\s|$)")
