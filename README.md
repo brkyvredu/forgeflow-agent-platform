@@ -127,6 +127,7 @@ Run a deterministic, read-only repository analysis:
 forgeflow analyze --repo . --output reports
 forgeflow analyze --repo . --fail-on high --min-confidence 0.80
 forgeflow analyze --repo . --exclude "examples/**"
+forgeflow analyze --repo . --agents security
 ```
 
 The command writes `review.md`, `findings.json`, and `execution-summary.json`. It performs bounded
@@ -134,9 +135,12 @@ repository discovery and evidence-backed checks for credential-like literals, un
 execution, mutable Docker base tags, root container execution, missing tests, and missing CI.
 Sensitive files, generated directories, oversized text files, symlinks, and configured glob
 exclusions are skipped. Findings are evidence-validated, deduplicated, and assigned a bounded
-engineering prioritization score. Specialist-agent findings are introduced in a later v0.2
-increment. See [`docs/rules.md`](docs/rules.md) for the rule catalog and
-[`docs/quality-gates.md`](docs/quality-gates.md) for validation and CI behavior.
+engineering prioritization score. The optional `--agents security` mode runs an isolated Google
+ADK reviewer over a bounded, line-numbered, credential-redacted evidence bundle. Agent findings
+pass through the same confidence, evidence-validation, deduplication, and scoring pipeline. An agent
+provider failure is recorded as a warning without discarding deterministic results. See
+[`docs/security-agent.md`](docs/security-agent.md), [`docs/rules.md`](docs/rules.md), and
+[`docs/quality-gates.md`](docs/quality-gates.md).
 
 Run tests:
 
