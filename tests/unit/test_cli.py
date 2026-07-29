@@ -23,7 +23,10 @@ def test_analyze_writes_deterministic_reports(tmp_path: Path) -> None:
     assert (output / "review.md").exists()
     findings = json.loads((output / "findings.json").read_text(encoding="utf-8"))
     assert {finding["rule_id"] for finding in findings} == {"FF-CI-001", "FF-TEST-001"}
-    assert all(finding["validation_status"] == "supported" for finding in findings)
+    assert all(
+        finding["validation_status"] == "deterministically_confirmed"
+        for finding in findings
+    )
     summary = json.loads((output / "execution-summary.json").read_text(encoding="utf-8"))
     assert summary["repository"]["total_files"] == 1
     assert summary["analysis"]["finding_count"] == 2
@@ -175,6 +178,7 @@ class _FailingTestReviewer:
 
 def test_agent_selection_accepts_comma_separated_agents() -> None:
     assert _normalize_agents("test,security") == ("security", "test")
+    assert _normalize_agents(("test", "security")) == ("security", "test")
     assert _normalize_agents("none") == ()
 
 
@@ -263,3 +267,49 @@ def test_test_agent_failure_does_not_discard_security_result(tmp_path: Path) -> 
     assert summary["execution"]["status"] == "completed_with_warnings"
     assert summary["execution"]["agent_runs"]["security"]["status"] == "completed"
     assert summary["execution"]["agent_runs"]["test"]["status"] == "failed"
+
+
+class _AmbiguousSecurityReviewer:
+    async def review(self, evidence: "RepositoryEvidence") -> list["Finding"]:
+        from forgeflow.domain.models import Finding, Severity
+
+        return [
+            Finding(
+                agent="security-agent",
+                category="Command Injection",
+                severity=Severity.HIGH,
+                title="Quoted environment variable may be injectable",
+                description="A shell command expands an environment variable.",
+                recommendation="Review command construction.",
+                file=Path("services.yaml"),
+                line_start=1,
+                line_end=1,
+                evidence='args: [\'git clone "$REPOSITORY_URL" /workspace\']',
+                confidence=0.9,
+                rule_id="FF-AGENT-SEC-AMBIGUOUS",
+            )
+        ]
+
+
+def test_quality_gate_ignores_human_review_candidate(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    (repository / "services.yaml").write_text(
+        'args: [\'git clone "$REPOSITORY_URL" /workspace\']\n', encoding="utf-8"
+    )
+    output = tmp_path / "reports"
+
+    exit_code = _run_analyze(
+        repository,
+        output,
+        agents="security",
+        fail_on="high",
+        security_reviewer=_AmbiguousSecurityReviewer(),
+    )
+
+    assert exit_code == 0
+    findings = json.loads((output / "findings.json").read_text(encoding="utf-8"))
+    candidate = next(item for item in findings if item["agent"] == "security-agent")
+    assert candidate["validation_status"] == "human_review_required"
+    assert candidate["scoring_eligible"] is False
+    assert candidate["severity"] == "info"

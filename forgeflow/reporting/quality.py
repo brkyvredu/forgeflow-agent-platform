@@ -10,6 +10,7 @@ from forgeflow.domain.models import (
     Severity,
     ValidationStatus,
 )
+from forgeflow.reporting.verification import verify_findings
 
 _SEVERITY_DEDUCTIONS = {
     Severity.CRITICAL: 20,
@@ -24,6 +25,14 @@ _SEVERITY_ORDER = {
     Severity.MEDIUM: 2,
     Severity.LOW: 3,
     Severity.INFO: 4,
+}
+_VALIDATION_ORDER = {
+    ValidationStatus.DETERMINISTICALLY_CONFIRMED: 0,
+    ValidationStatus.SEMANTICALLY_VERIFIED: 1,
+    ValidationStatus.EVIDENCE_MATCHED: 2,
+    ValidationStatus.HUMAN_REVIEW_REQUIRED: 3,
+    ValidationStatus.UNVALIDATED: 4,
+    ValidationStatus.UNSUPPORTED: 5,
 }
 
 
@@ -102,7 +111,7 @@ def validate_findings(
             finding.validation_status = ValidationStatus.UNSUPPORTED
             unsupported.append(finding)
         else:
-            finding.validation_status = ValidationStatus.SUPPORTED
+            finding.validation_status = ValidationStatus.EVIDENCE_MATCHED
             supported.append(finding)
 
     return supported, unsupported
@@ -121,6 +130,12 @@ def deduplicate_findings(findings: list[Finding]) -> tuple[list[Finding], int]:
         primary.confidence = max(item.confidence for item in group)
         primary.sources = sorted({source for item in group for source in item.sources})
         primary.agent = primary.sources[0]
+        strongest = min(group, key=lambda item: _VALIDATION_ORDER[item.validation_status])
+        primary.validation_status = strongest.validation_status
+        primary.scoring_eligible = any(item.scoring_eligible for item in group)
+        primary.validation_messages = sorted(
+            {message for item in group for message in item.validation_messages}
+        )
         merged.append(primary)
         duplicate_count += len(group) - 1
 
@@ -138,7 +153,8 @@ def deduplicate_findings(findings: list[Finding]) -> tuple[list[Finding], int]:
 def calculate_score(findings: list[Finding]) -> AnalysisScore:
     deductions = {severity.value: 0 for severity in Severity}
     for finding in findings:
-        deductions[finding.severity.value] += _SEVERITY_DEDUCTIONS[finding.severity]
+        if finding.scoring_eligible:
+            deductions[finding.severity.value] += _SEVERITY_DEDUCTIONS[finding.severity]
 
     value = max(0, 100 - sum(deductions.values()))
     if value >= 90:
@@ -160,13 +176,31 @@ def process_findings(
     raw_count = len(findings)
     confidence_filtered = [item for item in findings if item.confidence >= min_confidence]
     below_confidence_count = raw_count - len(confidence_filtered)
-    supported, unsupported = validate_findings(repository, confidence_filtered)
-    deduplicated, duplicates_merged = deduplicate_findings(supported)
+    evidence_matched, unsupported = validate_findings(repository, confidence_filtered)
+    verified = verify_findings(repository, evidence_matched)
+    deduplicated, duplicates_merged = deduplicate_findings(verified)
     quality = AnalysisQuality(
         raw_finding_count=raw_count,
         supported_finding_count=len(deduplicated),
         unsupported_finding_count=len(unsupported),
         duplicates_merged=duplicates_merged,
         below_confidence_count=below_confidence_count,
+        evidence_matched_count=sum(
+            item.validation_status == ValidationStatus.EVIDENCE_MATCHED
+            for item in deduplicated
+        ),
+        semantically_verified_count=sum(
+            item.validation_status == ValidationStatus.SEMANTICALLY_VERIFIED
+            for item in deduplicated
+        ),
+        deterministically_confirmed_count=sum(
+            item.validation_status == ValidationStatus.DETERMINISTICALLY_CONFIRMED
+            for item in deduplicated
+        ),
+        human_review_count=sum(
+            item.validation_status == ValidationStatus.HUMAN_REVIEW_REQUIRED
+            for item in deduplicated
+        ),
+        scoring_eligible_count=sum(item.scoring_eligible for item in deduplicated),
     )
     return deduplicated, quality, calculate_score(deduplicated)
