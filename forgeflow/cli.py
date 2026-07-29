@@ -1,4 +1,5 @@
 import argparse
+import asyncio
 import sys
 from collections import Counter
 from datetime import UTC, datetime
@@ -8,11 +9,17 @@ from time import perf_counter
 from pydantic import ValidationError
 
 from forgeflow.domain.models import (
+    AgentRunSummary,
     AnalysisRequest,
     AnalysisResult,
     ExecutionSummary,
     Finding,
     Severity,
+)
+from forgeflow.orchestration import (
+    GoogleAdkSecurityReviewer,
+    SecurityReviewer,
+    build_security_evidence,
 )
 from forgeflow.reporting import process_findings, write_analysis_reports
 from forgeflow.scanner import discover_repository, scan_repository
@@ -63,6 +70,12 @@ def _parser() -> argparse.ArgumentParser:
         metavar="GLOB",
         help="Exclude a repository-relative glob; may be repeated",
     )
+    analyze.add_argument(
+        "--agents",
+        choices=["none", "security"],
+        default="none",
+        help="Run optional specialist agents after deterministic analysis",
+    )
     return parser
 
 
@@ -80,6 +93,8 @@ def _run_analyze(
     min_confidence: float = 0.0,
     fail_on: str = "none",
     exclusions: list[str] | None = None,
+    agents: str = "none",
+    security_reviewer: SecurityReviewer | None = None,
 ) -> int:
     started_at = datetime.now(UTC)
     started_clock = perf_counter()
@@ -101,7 +116,44 @@ def _run_analyze(
             effective_exclusions.append(f"{relative_output.as_posix()}/**")
 
         metadata = discover_repository(request.repository, effective_exclusions)
-        raw_findings = scan_repository(request.repository, metadata, effective_exclusions)
+        deterministic_findings = scan_repository(
+            request.repository, metadata, effective_exclusions
+        )
+        raw_findings = list(deterministic_findings)
+        agent_runs: dict[str, AgentRunSummary] = {}
+        agent_notes: list[str] = []
+        if agents == "security":
+            evidence = build_security_evidence(
+                request.repository,
+                metadata,
+                deterministic_findings,
+                effective_exclusions,
+            )
+            reviewer = security_reviewer or GoogleAdkSecurityReviewer()
+            agent_started = perf_counter()
+            try:
+                agent_findings = asyncio.run(reviewer.review(evidence))
+            except Exception as exc:  # noqa: BLE001 - specialist failure must be isolated
+                agent_runs["security"] = AgentRunSummary(
+                    status="failed",
+                    duration_ms=max(0, round((perf_counter() - agent_started) * 1000)),
+                    context_files=len(evidence.files),
+                    context_chars=evidence.character_count,
+                    prompt_risk_files=len(evidence.prompt_risk_files),
+                    message=f"{type(exc).__name__}: review failed",
+                )
+                agent_notes.append("Security agent failed; deterministic analysis was preserved.")
+            else:
+                raw_findings.extend(agent_findings)
+                agent_runs["security"] = AgentRunSummary(
+                    status="completed",
+                    finding_count=len(agent_findings),
+                    duration_ms=max(0, round((perf_counter() - agent_started) * 1000)),
+                    context_files=len(evidence.files),
+                    context_chars=evidence.character_count,
+                    prompt_risk_files=len(evidence.prompt_risk_files),
+                    message="Evidence bundle was truncated." if evidence.truncated else None,
+                )
         findings, quality, score = process_findings(
             request.repository,
             raw_findings,
@@ -120,16 +172,26 @@ def _run_analyze(
         quality=quality,
         score=score,
         execution=ExecutionSummary(
-            status="completed",
+            status=(
+                "completed_with_warnings"
+                if any(run.status == "failed" for run in agent_runs.values())
+                else "completed"
+            ),
             started_at=started_at,
             finished_at=finished_at,
             duration_ms=duration_ms,
+            analyzer_mode=(
+                "deterministic-rules+security-agent"
+                if agents == "security"
+                else "deterministic-rules"
+            ),
             notes=[
                 "Deterministic repository discovery completed.",
-                f"Generated {quality.raw_finding_count} raw deterministic finding(s).",
+                f"Generated {len(deterministic_findings)} deterministic finding(s).",
                 f"Published {quality.supported_finding_count} supported finding(s).",
-                "Specialist-agent analysis is not enabled in this increment.",
+                *agent_notes,
             ],
+            agent_runs=agent_runs,
         ),
     )
     review_path, findings_path, summary_path = write_analysis_reports(
@@ -164,6 +226,7 @@ def main() -> None:
                 min_confidence=args.min_confidence,
                 fail_on=args.fail_on,
                 exclusions=args.exclude,
+                agents=args.agents,
             )
         )
     raise SystemExit(2)

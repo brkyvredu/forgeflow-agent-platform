@@ -125,6 +125,16 @@ class AnalysisScore(BaseModel):
     )
 
 
+class AgentRunSummary(BaseModel):
+    status: str
+    finding_count: int = Field(default=0, ge=0)
+    duration_ms: int = Field(default=0, ge=0)
+    context_files: int = Field(default=0, ge=0)
+    context_chars: int = Field(default=0, ge=0)
+    prompt_risk_files: int = Field(default=0, ge=0)
+    message: str | None = None
+
+
 class ExecutionSummary(BaseModel):
     status: str
     started_at: datetime
@@ -132,6 +142,7 @@ class ExecutionSummary(BaseModel):
     duration_ms: int = Field(ge=0)
     analyzer_mode: str = "deterministic-rules"
     notes: list[str] = Field(default_factory=list)
+    agent_runs: dict[str, AgentRunSummary] = Field(default_factory=dict)
 
 
 class AnalysisResult(BaseModel):

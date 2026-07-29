@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import os
 import re
 from pathlib import Path
@@ -111,7 +112,211 @@ def _mask_value(line: str, value: str) -> str:
     return line.replace(value, "***REDACTED***", 1).strip()[:240]
 
 
-def _secret_findings(path: Path, root: Path, lines: list[str]) -> list[Finding]:
+def _credential_name(node: ast.expr) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    if isinstance(node, ast.Subscript):
+        key = node.slice
+        if isinstance(key, ast.Constant) and isinstance(key.value, str):
+            return key.value
+    return None
+
+
+def _literal_string(node: ast.expr | None) -> str | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+def _is_credential_name(name: str | None) -> bool:
+    return bool(name and re.search(_CREDENTIAL_KEY_PATTERN, name, re.IGNORECASE))
+
+
+def _python_secret_candidates(tree: ast.AST) -> list[tuple[ast.AST, str]]:
+    candidates: list[tuple[ast.AST, str]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            value = _literal_string(node.value)
+            if value is None:
+                continue
+            for target in node.targets:
+                if _is_credential_name(_credential_name(target)):
+                    candidates.append((node, value))
+        elif isinstance(node, ast.AnnAssign):
+            value = _literal_string(node.value)
+            if value is not None and _is_credential_name(_credential_name(node.target)):
+                candidates.append((node, value))
+        elif isinstance(node, ast.NamedExpr):
+            value = _literal_string(node.value)
+            if value is not None and _is_credential_name(_credential_name(node.target)):
+                candidates.append((node, value))
+        elif isinstance(node, ast.Dict):
+            for key, value_node in zip(node.keys, node.values, strict=False):
+                key_value = _literal_string(key)
+                value = _literal_string(value_node)
+                if value is not None and _is_credential_name(key_value):
+                    candidates.append((value_node, value))
+    return candidates
+
+
+def _python_subprocess_aliases(tree: ast.AST) -> tuple[set[str], set[str]]:
+    modules = {"subprocess"}
+    functions: set[str] = set()
+    supported = {
+        "Popen",
+        "call",
+        "check_call",
+        "check_output",
+        "getoutput",
+        "getstatusoutput",
+        "run",
+    }
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "subprocess":
+                    modules.add(alias.asname or alias.name)
+        elif isinstance(node, ast.ImportFrom) and node.module == "subprocess":
+            for alias in node.names:
+                if alias.name in supported:
+                    functions.add(alias.asname or alias.name)
+    return modules, functions
+
+
+def _is_subprocess_call(
+    call: ast.Call, module_aliases: set[str], function_aliases: set[str]
+) -> bool:
+    if isinstance(call.func, ast.Name):
+        return call.func.id in function_aliases
+    if not isinstance(call.func, ast.Attribute):
+        return False
+    return (
+        isinstance(call.func.value, ast.Name)
+        and call.func.value.id in module_aliases
+        and call.func.attr
+        in {
+            "Popen",
+            "call",
+            "check_call",
+            "check_output",
+            "getoutput",
+            "getstatusoutput",
+            "run",
+        }
+    )
+
+
+def _source_line(lines: list[str], node: ast.AST) -> str:
+    line_number = getattr(node, "lineno", 0)
+    if 1 <= line_number <= len(lines):
+        return lines[line_number - 1]
+    return ""
+
+
+def _secret_finding(
+    path: Path,
+    root: Path,
+    line_number: int,
+    line_end: int,
+    line: str,
+    value: str,
+) -> Finding:
+    return Finding(
+        agent="deterministic-security",
+        category="secret-management",
+        severity=Severity.HIGH,
+        title="Possible hard-coded credential",
+        description=(
+            "A credential-like value appears to be embedded in a source-controlled "
+            "text file."
+        ),
+        recommendation=(
+            "Load the value from an environment variable or secret manager and rotate it "
+            "if it has been used outside a test environment."
+        ),
+        file=_relative(path, root),
+        line_start=line_number,
+        line_end=line_end,
+        evidence=_mask_value(line, value),
+        confidence=0.9,
+        rule_id="FF-SEC-001",
+    )
+
+
+def _python_security_findings(path: Path, root: Path, lines: list[str]) -> list[Finding]:
+    source = "\n".join(lines)
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+
+    findings: list[Finding] = []
+    for node, value in _python_secret_candidates(tree):
+        if len(value) < 8 or _looks_like_placeholder(value):
+            continue
+        line_number = getattr(node, "lineno", 1)
+        line_end = getattr(node, "end_lineno", line_number) or line_number
+        findings.append(
+            _secret_finding(
+                path,
+                root,
+                line_number,
+                line_end,
+                _source_line(lines, node),
+                value,
+            )
+        )
+        if len(findings) >= _MAX_FINDINGS_PER_RULE:
+            break
+
+    module_aliases, function_aliases = _python_subprocess_aliases(tree)
+    shell_count = 0
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not _is_subprocess_call(
+            node, module_aliases, function_aliases
+        ):
+            continue
+        shell_enabled = any(
+            keyword.arg == "shell"
+            and isinstance(keyword.value, ast.Constant)
+            and keyword.value.value is True
+            for keyword in node.keywords
+        )
+        if not shell_enabled:
+            continue
+        line_number = node.lineno
+        line_end = node.end_lineno or line_number
+        findings.append(
+            Finding(
+                agent="deterministic-security",
+                category="command-execution",
+                severity=Severity.HIGH,
+                title="Shell execution enabled",
+                description=(
+                    "The code enables shell command interpretation, which can permit command "
+                    "injection when any command fragment is influenced by untrusted input."
+                ),
+                recommendation=(
+                    "Pass arguments as a list with shell execution disabled and validate all "
+                    "external input."
+                ),
+                file=_relative(path, root),
+                line_start=line_number,
+                line_end=line_end,
+                evidence=_source_line(lines, node).strip()[:240],
+                confidence=0.97,
+                rule_id="FF-SEC-002",
+            )
+        )
+        shell_count += 1
+        if shell_count >= _MAX_FINDINGS_PER_RULE:
+            break
+    return findings
+
+
+def _text_secret_findings(path: Path, root: Path, lines: list[str]) -> list[Finding]:
     findings: list[Finding] = []
     config_suffixes = {".conf", ".properties", ".toml", ".yaml", ".yml"}
     for line_number, line in enumerate(lines, start=1):
@@ -126,33 +331,14 @@ def _secret_findings(path: Path, root: Path, lines: list[str]) -> list[Finding]:
         if _looks_like_placeholder(value):
             continue
         findings.append(
-            Finding(
-                agent="deterministic-security",
-                category="secret-management",
-                severity=Severity.HIGH,
-                title="Possible hard-coded credential",
-                description=(
-                    "A credential-like value appears to be embedded in a source-controlled "
-                    "text file."
-                ),
-                recommendation=(
-                    "Load the value from an environment variable or secret manager and rotate it "
-                    "if it has been used outside a test environment."
-                ),
-                file=_relative(path, root),
-                line_start=line_number,
-                line_end=line_number,
-                evidence=_mask_value(line, value),
-                confidence=0.9,
-                rule_id="FF-SEC-001",
-            )
+            _secret_finding(path, root, line_number, line_number, line, value)
         )
         if len(findings) >= _MAX_FINDINGS_PER_RULE:
             break
     return findings
 
 
-def _shell_findings(path: Path, root: Path, lines: list[str]) -> list[Finding]:
+def _text_shell_findings(path: Path, root: Path, lines: list[str]) -> list[Finding]:
     findings: list[Finding] = []
     for line_number, line in enumerate(lines, start=1):
         if _SHELL_TRUE.search(line) is None:
@@ -183,6 +369,14 @@ def _shell_findings(path: Path, root: Path, lines: list[str]) -> list[Finding]:
             break
     return findings
 
+
+def _security_findings(path: Path, root: Path, lines: list[str]) -> list[Finding]:
+    if path.suffix.lower() in {".py", ".pyi"}:
+        return _python_security_findings(path, root, lines)
+    return [
+        *_text_secret_findings(path, root, lines),
+        *_text_shell_findings(path, root, lines),
+    ]
 
 def _docker_findings(path: Path, root: Path, lines: list[str]) -> list[Finding]:
     findings: list[Finding] = []
@@ -322,8 +516,7 @@ def scan_repository(
         lines = _read_lines(path)
         if not lines:
             continue
-        findings.extend(_secret_findings(path, root, lines))
-        findings.extend(_shell_findings(path, root, lines))
+        findings.extend(_security_findings(path, root, lines))
         if path.name.lower() == "dockerfile" or path.name.lower().startswith("dockerfile."):
             findings.extend(_docker_findings(path, root, lines))
 

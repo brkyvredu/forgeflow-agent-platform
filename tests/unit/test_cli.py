@@ -1,7 +1,12 @@
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from forgeflow.cli import _run_analyze
+
+if TYPE_CHECKING:
+    from forgeflow.domain.models import Finding
+    from forgeflow.orchestration.context import RepositoryEvidence
 
 
 def test_analyze_writes_deterministic_reports(tmp_path: Path) -> None:
@@ -68,3 +73,72 @@ def test_analyze_excludes_existing_output_directory_from_scan(tmp_path: Path) ->
     assert exit_code == 0
     findings = json.loads((output / "findings.json").read_text(encoding="utf-8"))
     assert all(finding["rule_id"] != "FF-SEC-002" for finding in findings)
+
+
+class _FakeSecurityReviewer:
+    async def review(self, evidence: "RepositoryEvidence") -> list["Finding"]:
+        from forgeflow.domain.models import Finding, Severity
+
+        return [
+            Finding(
+                agent="security-agent",
+                category="unsafe-evaluation",
+                severity=Severity.HIGH,
+                title="Untrusted input reaches eval",
+                description="The file evaluates untrusted input.",
+                recommendation="Use a constrained parser.",
+                file=Path("app.py"),
+                line_start=1,
+                line_end=1,
+                evidence="eval(user_input)",
+                confidence=0.95,
+                rule_id="FF-AGENT-SEC-TEST",
+            )
+        ]
+
+
+class _FailingSecurityReviewer:
+    async def review(self, evidence: "RepositoryEvidence") -> list["Finding"]:
+        raise RuntimeError("provider unavailable")
+
+
+def test_analyze_runs_security_agent_and_publishes_supported_finding(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    (repository / "app.py").write_text("eval(user_input)\n", encoding="utf-8")
+    output = tmp_path / "reports"
+
+    exit_code = _run_analyze(
+        repository,
+        output,
+        agents="security",
+        security_reviewer=_FakeSecurityReviewer(),
+    )
+
+    assert exit_code == 0
+    findings = json.loads((output / "findings.json").read_text(encoding="utf-8"))
+    assert any(item["agent"] == "security-agent" for item in findings)
+    summary = json.loads((output / "execution-summary.json").read_text(encoding="utf-8"))
+    assert summary["execution"]["agent_runs"]["security"]["status"] == "completed"
+    assert summary["execution"]["analyzer_mode"] == "deterministic-rules+security-agent"
+
+
+def test_analyze_preserves_deterministic_results_when_security_agent_fails(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    (repository / "app.py").write_text("print('safe')\n", encoding="utf-8")
+    output = tmp_path / "reports"
+
+    exit_code = _run_analyze(
+        repository,
+        output,
+        agents="security",
+        security_reviewer=_FailingSecurityReviewer(),
+    )
+
+    assert exit_code == 0
+    summary = json.loads((output / "execution-summary.json").read_text(encoding="utf-8"))
+    assert summary["execution"]["status"] == "completed_with_warnings"
+    assert summary["execution"]["agent_runs"]["security"]["status"] == "failed"

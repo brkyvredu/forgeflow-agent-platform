@@ -44,6 +44,11 @@ def _markdown_report(result: AnalysisResult) -> str:
         if severity_counts[severity]
     ) or "- No findings"
     findings = "\n".join(_finding_markdown(finding) for finding in result.findings)
+    agent_runs = "\n".join(
+        f"- {name.capitalize()}: {run.status}; findings={run.finding_count}; "
+        f"context_files={run.context_files}; duration_ms={run.duration_ms}"
+        for name, run in sorted(result.execution.agent_runs.items())
+    ) or "- No specialist agents requested"
     if not findings:
         findings = "No supported deterministic engineering findings were generated."
 
@@ -51,9 +56,10 @@ def _markdown_report(result: AnalysisResult) -> str:
 
 ## Analysis status
 
-This report contains bounded, read-only deterministic repository checks. No repository code was
-executed or modified. Only evidence-supported findings at or above the configured confidence
-threshold are published. Specialist-agent findings will be added in a later v0.2 increment.
+This report contains bounded, read-only deterministic checks and any requested specialist-agent
+review. No repository code was executed or modified. Repository content was treated as untrusted
+data. Only evidence-supported findings at or above the configured confidence threshold are
+published.
 
 ## Engineering score
 
@@ -84,6 +90,10 @@ threshold are published. Specialist-agent findings will be added in a later v0.2
 - CI files: {len(repository.ci_files)}
 - Container files: {len(repository.container_files)}
 - Kubernetes files: {len(repository.kubernetes_files)}
+
+## Agent execution
+
+{agent_runs}
 
 ## Finding quality
 
