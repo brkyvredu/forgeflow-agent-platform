@@ -3,7 +3,11 @@ from pathlib import Path
 from forgeflow.domain.models import Severity
 from forgeflow.orchestration.test_review import (
     TestFindingCandidate as FindingCandidate,
+)
+from forgeflow.orchestration.test_review import (
     TestReviewOutput as ReviewOutput,
+)
+from forgeflow.orchestration.test_review import (
     candidates_to_findings,
 )
 
