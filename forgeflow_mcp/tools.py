@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
 from typing import Any
 
 from forgeflow_mcp.policy import (
@@ -78,7 +77,10 @@ def search_repository(
     if not query or len(query) > 200:
         raise ValueError("Query must contain 1 to 200 characters")
     start = resolve_safe_path(relative_path)
-    extensions = {item.lower() if item.startswith(".") else f".{item.lower()}" for item in (include_extensions or [])}
+    extensions = {
+        item.lower() if item.startswith(".") else f".{item.lower()}"
+        for item in (include_extensions or [])
+    }
     result_limit = min(max(max_results, 1), 200)
     pattern = re.compile(re.escape(query), re.IGNORECASE)
     root = repository_root()
@@ -101,7 +103,8 @@ def search_repository(
             }
         if path.stat().st_size > TEXT_LIMIT:
             continue
-        for number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        for number, line in enumerate(lines, 1):
             if pattern.search(line):
                 results.append(
                     {

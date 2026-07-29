@@ -10,8 +10,10 @@ public class JavaMetricService {
     private static final Pattern IMPORT = Pattern.compile("(?m)^\\s*import\\s+[^;]+;");
     private static final Pattern TYPE = Pattern.compile("\\b(class|interface|enum|record)\\s+[A-Za-z_$][\\w$]*");
     private static final Pattern METHOD = Pattern.compile(
-            "(?m)^[\\t ]*(?:public|protected|private|static|final|synchronized|abstract|native|default|\\s)+" +
-            "[\\w<>, ?\\[\\].]+\\s+[A-Za-z_$][\\w$]*\\s*\\([^;{}]*\\)\\s*(?:throws\\s+[^{}]+)?\\{"
+            "(?m)^(?![\\t ]*(?:if|for|while|switch|catch|try|else|do)\\b)[\\t ]*"
+                    + "(?:(?:public|protected|private|static|final|synchronized|abstract|native|default)\\s+)*"
+                    + "[\\w$<>, ?\\[\\].]+\\s+[A-Za-z_$][\\w$]*\\s*"
+                    + "\\([^;{}]*\\)\\s*(?:throws\\s+[^{}]+)?\\{"
     );
     private static final Pattern TODO = Pattern.compile("(?i)\\b(TODO|FIXME|HACK)\\b");
     private static final Pattern DECISION = Pattern.compile("\\b(if|for|while|case|catch)\\b|&&|\\|\\||\\?");

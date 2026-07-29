@@ -12,7 +12,7 @@ from forgeflow_mcp.tools import (
 
 configure_telemetry()
 
-mcp = MCPServer("ForgeFlow Repository Tools", stateless_http=True, json_response=True)
+mcp = MCPServer("ForgeFlow Repository Tools")
 mcp.tool()(list_repository_tree)
 mcp.tool()(read_text_file)
 mcp.tool()(search_repository)
@@ -20,9 +20,15 @@ mcp.tool()(summarize_dependency_manifests)
 
 
 def main() -> None:
-    host = os.getenv("MCP_HOST", "0.0.0.0")
+    host = os.getenv("MCP_HOST", "127.0.0.1")
     port = int(os.getenv("MCP_PORT", "8001"))
-    mcp.run(transport="streamable-http", host=host, port=port)
+    mcp.run(
+        transport="streamable-http",
+        host=host,
+        port=port,
+        json_response=True,
+        stateless_http=True,
+    )
 
 
 if __name__ == "__main__":

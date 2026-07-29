@@ -8,6 +8,8 @@ data:
   FORGEFLOW_EMBEDDING_MODEL: gemini-embedding-001
   FORGEFLOW_EMBEDDING_DIMENSION: "768"
   MCP_SERVER_URL: http://mcp-server:8001/mcp
+  MCP_HOST: 0.0.0.0
+  MCP_PORT: "8001"
   JAVA_ANALYSIS_URL: http://java-analysis:8080
   OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
   REPOSITORY_ROOT: /workspace/repository

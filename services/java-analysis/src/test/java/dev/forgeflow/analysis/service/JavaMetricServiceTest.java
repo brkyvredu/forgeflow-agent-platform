@@ -32,6 +32,25 @@ class JavaMetricServiceTest {
     }
 
     @Test
+    void doesNotCountControlFlowAsMethods() {
+        String source = """
+                class Example {
+                    void run(boolean enabled) {
+                        if (enabled) {
+                            while (enabled) {
+                                break;
+                            }
+                        }
+                    }
+                }
+                """;
+
+        var metrics = service.analyze(source);
+
+        assertThat(metrics.methodCount()).isEqualTo(1);
+    }
+
+    @Test
     void flagsSelectedDangerousApis() {
         var metrics = service.analyze("class X { void x(){ new ProcessBuilder(); } }");
         assertThat(metrics.dangerousApis()).contains("ProcessBuilder");
