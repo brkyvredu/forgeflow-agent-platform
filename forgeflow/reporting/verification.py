@@ -180,6 +180,15 @@ def _verify_test_finding(repository: Path, finding: Finding) -> Finding:
     return finding
 
 
+def _verify_architecture_finding(repository: Path, finding: Finding) -> Finding:
+    del repository
+    return _mark_human_review(
+        finding,
+        "Architecture concerns require an explicit repository policy or human design review "
+        "before they can affect scoring.",
+    )
+
+
 def verify_findings(repository: Path, findings: list[Finding]) -> list[Finding]:
     """Assign semantic verification and scoring eligibility after evidence matching."""
     root = repository.expanduser().resolve(strict=True)
@@ -193,6 +202,8 @@ def verify_findings(repository: Path, findings: list[Finding]) -> list[Finding]:
             finding = _verify_security_finding(root, finding)
         elif finding.agent == "test-agent":
             finding = _verify_test_finding(root, finding)
+        elif finding.agent == "architecture-agent":
+            finding = _verify_architecture_finding(root, finding)
         else:
             finding = _mark_human_review(
                 finding,

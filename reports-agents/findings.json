@@ -1,0 +1,86 @@
+[
+  {
+    "id": "FF-AGENT-SEC-DC1C36D371-a223984c24f3",
+    "agent": "security-agent",
+    "sources": [
+      "security-agent"
+    ],
+    "category": "Command Injection",
+    "severity": "high",
+    "title": "Shell command execution with environment variable in Kubernetes initContainer",
+    "description": "The repository-clone initContainer executes a shell command using `sh -c` with string-interpolated `$REPOSITORY_URL`. If the repository URL configuration is manipulated or contains shell metacharacters, it could lead to arbitrary command execution within the container.",
+    "recommendation": "Avoid invoking shell scripts with unquoted configuration variables or pass the URL directly as an argument without shell evaluation.",
+    "file": "infra\\k8s\\services.yaml",
+    "line_start": 23,
+    "line_end": 23,
+    "evidence": "args: ['git clone --depth=1 \"$REPOSITORY_URL\" /workspace/repository']",
+    "confidence": 0.8,
+    "rule_id": "FF-AGENT-SEC-DC1C36D371",
+    "fingerprint": "sha256:a223984c24f3f577edd30e7a9d4e1ac8bfc598e6d3a6c9ce0cf3ce51e7381896",
+    "validation_status": "supported",
+    "validation_messages": []
+  },
+  {
+    "id": "FF-AGENT-SEC-A4952F03F3-95a678d94ec3",
+    "agent": "security-agent",
+    "sources": [
+      "security-agent"
+    ],
+    "category": "Hardcoded Credentials",
+    "severity": "medium",
+    "title": "Hardcoded default database credentials in Docker Compose configuration",
+    "description": "The Docker Compose configuration provides hardcoded fallback credentials ('forgeflow') for PostgreSQL authentication in POSTGRES_PASSWORD and DATABASE_URL. If services are deployed using docker compose without explicitly setting environment variables, the database will operate with default credentials.",
+    "recommendation": "Remove default credential fallbacks from docker-compose.yml and enforce setting strong credentials through environment files or a secret manager.",
+    "file": "docker-compose.yml",
+    "line_start": 7,
+    "line_end": 71,
+    "evidence": "POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-forgeflow}",
+    "confidence": 0.85,
+    "rule_id": "FF-AGENT-SEC-A4952F03F3",
+    "fingerprint": "sha256:95a678d94ec37812ffe293176ae90be0cf7466771c5b18ad7f832a62565f1293",
+    "validation_status": "supported",
+    "validation_messages": []
+  },
+  {
+    "id": "FF-AGENT-TEST-F23C257F83-3d32c0be83c4",
+    "agent": "test-agent",
+    "sources": [
+      "test-agent"
+    ],
+    "category": "untested-error-path",
+    "severity": "medium",
+    "title": "Untested CLI agent selection validation and error handling",
+    "description": "The `_normalize_agents` helper in `forgeflow/cli.py` validates requested specialist agent strings or tuples, raising a `ValueError` when `none` is combined with active agents or when unknown agent names are supplied. Although `_normalize_agents` is imported into `tests/unit/test_cli.py`, no test cases verify these validation paths or assert that `ValueError` is raised on invalid agent inputs.",
+    "recommendation": "Add unit tests in `tests/unit/test_cli.py` that invoke `_normalize_agents` with invalid combinations (such as `none,security`), unknown agent names, and tuple parameters to ensure validation errors are raised as expected.",
+    "file": "forgeflow\\cli.py",
+    "line_start": 87,
+    "line_end": 102,
+    "evidence": "if \"none\" in requested:\n        raise ValueError(\"--agents none cannot be combined with specialist agents\")",
+    "confidence": 0.9,
+    "rule_id": "FF-AGENT-TEST-F23C257F83",
+    "fingerprint": "sha256:3d32c0be83c4e9e760f4fafa93f64e233a0813bb4c2cad06f952d14041d9e30a",
+    "validation_status": "supported",
+    "validation_messages": []
+  },
+  {
+    "id": "FF-AGENT-TEST-38E57A44E2-35ad88ebdd63",
+    "agent": "test-agent",
+    "sources": [
+      "test-agent"
+    ],
+    "category": "untested-security-boundary",
+    "severity": "medium",
+    "title": "Untested path traversal and line boundary checks in finding validation",
+    "description": "In `forgeflow/reporting/quality.py`, `validate_findings` invokes `_safe_finding_path` to ensure candidate finding paths do not escape the repository root via absolute paths or `..` path traversal sequences. It also checks whether line ranges exceed file lengths. Existing tests in `tests/unit/test_quality.py` verify valid evidence and secret redactions, but do not test findings with path traversal attempts or out-of-bounds line numbers.",
+    "recommendation": "Extend `tests/unit/test_quality.py` to include candidate findings with path escape attempts (e.g. `../outside.py` or `/etc/passwd`) and line ranges beyond file length to verify they are flagged as `ValidationStatus.UNSUPPORTED` with appropriate validation messages.",
+    "file": "forgeflow\\reporting\\quality.py",
+    "line_start": 30,
+    "line_end": 38,
+    "evidence": "if relative_path.is_absolute() or \"..\" in relative_path.parts:",
+    "confidence": 0.9,
+    "rule_id": "FF-AGENT-TEST-38E57A44E2",
+    "fingerprint": "sha256:35ad88ebdd6396ec5663d3c5e6dba66201f362130656df81df0b1ec51e40b881",
+    "validation_status": "supported",
+    "validation_messages": []
+  }
+]

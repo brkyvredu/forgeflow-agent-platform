@@ -1,5 +1,11 @@
+from forgeflow.orchestration.architecture import (
+    ArchitectureReviewer,
+    ArchitectureReviewError,
+    GoogleAdkArchitectureReviewer,
+)
 from forgeflow.orchestration.context import (
     RepositoryEvidence,
+    build_architecture_evidence,
     build_security_evidence,
     build_test_evidence,
 )
@@ -16,6 +22,9 @@ from forgeflow.orchestration.test_review import (
 )
 
 __all__ = [
+    "ArchitectureReviewer",
+    "ArchitectureReviewError",
+    "GoogleAdkArchitectureReviewer",
     "GoogleAdkSecurityReviewer",
     "GoogleAdkTestReviewer",
     "RepositoryEvidence",
@@ -24,6 +33,7 @@ __all__ = [
     "SpecialistJob",
     "TestReviewer",
     "TestReviewError",
+    "build_architecture_evidence",
     "build_security_evidence",
     "build_test_evidence",
     "run_specialist_jobs",

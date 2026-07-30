@@ -1,0 +1,77 @@
+{
+  "repository": {
+    "root": "E:\\Projects\\forgeflow-agent-platform",
+    "total_files": 84,
+    "total_bytes": 249237,
+    "languages": {
+      "Python": 35,
+      "Java": 4
+    },
+    "manifests": [
+      "pyproject.toml",
+      "services/java-analysis/pom.xml"
+    ],
+    "test_directories": [
+      "services/java-analysis/src/test",
+      "tests"
+    ],
+    "ci_files": [
+      ".github/workflows/ci.yml",
+      ".github/workflows/release.yml"
+    ],
+    "container_files": [
+      "Dockerfile",
+      "Dockerfile.mcp",
+      "docker-compose.yml",
+      "services/java-analysis/Dockerfile"
+    ],
+    "kubernetes_files": [
+      "infra/k8s/configmap.yaml",
+      "infra/k8s/namespace.yaml",
+      "infra/k8s/network-policy.yaml",
+      "infra/k8s/otel.yaml",
+      "infra/k8s/postgres.yaml",
+      "infra/k8s/secret.example.yaml",
+      "infra/k8s/services.yaml"
+    ],
+    "skipped_sensitive_files": 1,
+    "skipped_symlinks": 0,
+    "skipped_custom_exclusions": 0
+  },
+  "analysis": {
+    "finding_count": 0,
+    "severity_counts": {},
+    "quality": {
+      "raw_finding_count": 0,
+      "supported_finding_count": 0,
+      "unsupported_finding_count": 0,
+      "duplicates_merged": 0,
+      "below_confidence_count": 0
+    },
+    "score": {
+      "value": 100,
+      "risk_level": "low",
+      "deductions": {
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "low": 0,
+        "info": 0
+      },
+      "disclaimer": "This engineering score is a prioritization aid, not a security certification."
+    }
+  },
+  "execution": {
+    "status": "completed",
+    "started_at": "2026-07-29T13:31:22.189358Z",
+    "finished_at": "2026-07-29T13:31:22.242365Z",
+    "duration_ms": 53,
+    "analyzer_mode": "deterministic-rules",
+    "notes": [
+      "Deterministic repository discovery completed.",
+      "Generated 0 deterministic finding(s).",
+      "Published 0 supported finding(s)."
+    ],
+    "agent_runs": {}
+  }
+}

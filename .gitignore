@@ -15,3 +15,7 @@ target/
 reports/
 
 *.egg-info/
+
+.pytest-tmp/
+
+reports*/

@@ -46,7 +46,17 @@ def test_symlink_escape_is_rejected(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     repository.mkdir()
     outside = tmp_path / "outside.txt"
     outside.write_text("secret", encoding="utf-8")
-    (repository / "link.txt").symlink_to(outside)
+    link = repository / "link.txt"
+
+    try:
+        link.symlink_to(outside)
+    except OSError as exc:
+        if getattr(exc, "winerror", None) == 1314:
+            pytest.skip(
+                "Symlink creation requires Windows Developer Mode "
+                "or elevated privileges."
+            )
+        raise
     monkeypatch.setenv("REPOSITORY_ROOT", str(repository))
     with pytest.raises(ValueError, match="escapes"):
         resolve_safe_path("link.txt")

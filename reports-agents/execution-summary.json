@@ -1,0 +1,99 @@
+{
+  "repository": {
+    "root": "E:\\Projects\\forgeflow-agent-platform",
+    "total_files": 94,
+    "total_bytes": 268836,
+    "languages": {
+      "Python": 38,
+      "Java": 4
+    },
+    "manifests": [
+      "pyproject.toml",
+      "services/java-analysis/pom.xml"
+    ],
+    "test_directories": [
+      "services/java-analysis/src/test",
+      "tests"
+    ],
+    "ci_files": [
+      ".github/workflows/ci.yml",
+      ".github/workflows/release.yml"
+    ],
+    "container_files": [
+      "Dockerfile",
+      "Dockerfile.mcp",
+      "docker-compose.yml",
+      "services/java-analysis/Dockerfile"
+    ],
+    "kubernetes_files": [
+      "infra/k8s/configmap.yaml",
+      "infra/k8s/namespace.yaml",
+      "infra/k8s/network-policy.yaml",
+      "infra/k8s/otel.yaml",
+      "infra/k8s/postgres.yaml",
+      "infra/k8s/secret.example.yaml",
+      "infra/k8s/services.yaml"
+    ],
+    "skipped_sensitive_files": 1,
+    "skipped_symlinks": 0,
+    "skipped_custom_exclusions": 0
+  },
+  "analysis": {
+    "finding_count": 4,
+    "severity_counts": {
+      "high": 1,
+      "medium": 3
+    },
+    "quality": {
+      "raw_finding_count": 4,
+      "supported_finding_count": 4,
+      "unsupported_finding_count": 0,
+      "duplicates_merged": 0,
+      "below_confidence_count": 0
+    },
+    "score": {
+      "value": 83,
+      "risk_level": "moderate",
+      "deductions": {
+        "critical": 0,
+        "high": 8,
+        "medium": 9,
+        "low": 0,
+        "info": 0
+      },
+      "disclaimer": "This engineering score is a prioritization aid, not a security certification."
+    }
+  },
+  "execution": {
+    "status": "completed",
+    "started_at": "2026-07-29T18:26:41.159345Z",
+    "finished_at": "2026-07-29T18:27:12.385088Z",
+    "duration_ms": 31226,
+    "analyzer_mode": "deterministic-rules+security-agent+test-agent",
+    "notes": [
+      "Deterministic repository discovery completed.",
+      "Generated 0 deterministic finding(s).",
+      "Published 4 supported finding(s)."
+    ],
+    "agent_runs": {
+      "security": {
+        "status": "completed",
+        "finding_count": 2,
+        "duration_ms": 27809,
+        "context_files": 32,
+        "context_chars": 53796,
+        "prompt_risk_files": 2,
+        "message": "Evidence bundle was truncated."
+      },
+      "test": {
+        "status": "completed",
+        "finding_count": 2,
+        "duration_ms": 29813,
+        "context_files": 24,
+        "context_chars": 61128,
+        "prompt_risk_files": 3,
+        "message": "Evidence bundle was truncated."
+      }
+    }
+  }
+}
