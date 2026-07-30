@@ -17,3 +17,5 @@ reports/
 *.egg-info/
 
 .pytest-tmp/
+
+reports*/
