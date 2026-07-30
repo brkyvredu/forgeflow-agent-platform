@@ -184,7 +184,7 @@ def test_agent_selection_accepts_comma_separated_agents() -> None:
 
 def test_agent_selection_rejects_unknown_or_mixed_none() -> None:
     with pytest.raises(ValueError, match="Unsupported agent"):
-        _normalize_agents("release")
+        _normalize_agents("performance")
     with pytest.raises(ValueError, match="cannot be combined"):
         _normalize_agents("none,test")
 
@@ -374,3 +374,64 @@ def test_analyze_runs_architecture_agent_as_human_review_candidate(
     assert summary["execution"]["analyzer_mode"] == (
         "deterministic-rules+architecture-agent"
     )
+
+
+class _FakeReleaseReviewer:
+    async def review(self, evidence: "RepositoryEvidence") -> list["Finding"]:
+        from forgeflow.domain.models import Finding, Severity
+
+        return [
+            Finding(
+                agent="release-agent",
+                category="release-reproducibility",
+                severity=Severity.MEDIUM,
+                title="Release action uses a mutable version tag",
+                description="The workflow references a mutable action tag.",
+                recommendation="Pin the action to a reviewed commit SHA.",
+                file=Path(".github/workflows/release.yml"),
+                line_start=3,
+                line_end=3,
+                evidence="uses: docker/build-push-action@v6",
+                confidence=0.89,
+                rule_id="FF-AGENT-REL-TEST",
+            )
+        ]
+
+
+def test_agent_selection_accepts_release_agent() -> None:
+    assert _normalize_agents("release,architecture,test,security") == (
+        "security",
+        "test",
+        "architecture",
+        "release",
+    )
+
+
+def test_analyze_runs_release_agent_as_human_review_candidate(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    (repository / ".github" / "workflows").mkdir(parents=True)
+    (repository / ".github" / "workflows" / "release.yml").write_text(
+        "name: release\nsteps:\n  - uses: docker/build-push-action@v6\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "reports"
+
+    exit_code = _run_analyze(
+        repository,
+        output,
+        agents="release",
+        release_reviewer=_FakeReleaseReviewer(),
+        fail_on="high",
+    )
+
+    assert exit_code == 0
+    findings = json.loads((output / "findings.json").read_text(encoding="utf-8"))
+    candidate = next(item for item in findings if item["agent"] == "release-agent")
+    assert candidate["validation_status"] == "human_review_required"
+    assert candidate["scoring_eligible"] is False
+    assert candidate["severity"] == "info"
+    summary = json.loads((output / "execution-summary.json").read_text(encoding="utf-8"))
+    assert summary["execution"]["agent_runs"]["release"]["status"] == "completed"
+    assert summary["execution"]["analyzer_mode"] == "deterministic-rules+release-agent"

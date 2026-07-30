@@ -189,6 +189,15 @@ def _verify_architecture_finding(repository: Path, finding: Finding) -> Finding:
     )
 
 
+def _verify_release_finding(repository: Path, finding: Finding) -> Finding:
+    del repository
+    return _mark_human_review(
+        finding,
+        "Release-readiness concerns require repository policy, external artifact state, or "
+        "human operational review before they can affect scoring.",
+    )
+
+
 def verify_findings(repository: Path, findings: list[Finding]) -> list[Finding]:
     """Assign semantic verification and scoring eligibility after evidence matching."""
     root = repository.expanduser().resolve(strict=True)
@@ -204,6 +213,8 @@ def verify_findings(repository: Path, findings: list[Finding]) -> list[Finding]:
             finding = _verify_test_finding(root, finding)
         elif finding.agent == "architecture-agent":
             finding = _verify_architecture_finding(root, finding)
+        elif finding.agent == "release-agent":
+            finding = _verify_release_finding(root, finding)
         else:
             finding = _mark_human_review(
                 finding,

@@ -19,12 +19,15 @@ from forgeflow.domain.models import (
 from forgeflow.orchestration import (
     ArchitectureReviewer,
     GoogleAdkArchitectureReviewer,
+    GoogleAdkReleaseReviewer,
     GoogleAdkSecurityReviewer,
     GoogleAdkTestReviewer,
+    ReleaseReviewer,
     SecurityReviewer,
     SpecialistJob,
     TestReviewer,
     build_architecture_evidence,
+    build_release_evidence,
     build_security_evidence,
     build_test_evidence,
     run_specialist_jobs,
@@ -82,7 +85,10 @@ def _parser() -> argparse.ArgumentParser:
         "--agents",
         default="none",
         metavar="LIST",
-        help="Comma-separated specialist agents: security, test, architecture, or none",
+        help=(
+            "Comma-separated specialist agents: security, test, architecture, release, "
+            "or none"
+        ),
     )
     return parser
 
@@ -97,7 +103,7 @@ def _normalize_agents(value: str | tuple[str, ...]) -> tuple[str, ...]:
         return ()
     if "none" in requested:
         raise ValueError("--agents none cannot be combined with specialist agents")
-    supported = ("security", "test", "architecture")
+    supported = ("security", "test", "architecture", "release")
     invalid = sorted(set(requested) - set(supported))
     if invalid:
         raise ValueError(f"Unsupported agent(s): {', '.join(invalid)}")
@@ -125,6 +131,7 @@ def _run_analyze(
     security_reviewer: SecurityReviewer | None = None,
     test_reviewer: TestReviewer | None = None,
     architecture_reviewer: ArchitectureReviewer | None = None,
+    release_reviewer: ReleaseReviewer | None = None,
 ) -> int:
     started_at = datetime.now(UTC)
     started_clock = perf_counter()
@@ -186,6 +193,20 @@ def _run_analyze(
                         architecture_reviewer or GoogleAdkArchitectureReviewer()
                     ),
                     evidence=build_architecture_evidence(
+                        request.repository,
+                        metadata,
+                        deterministic_findings,
+                        effective_exclusions,
+                    ),
+                )
+            )
+
+        if "release" in selected_agents:
+            jobs.append(
+                SpecialistJob(
+                    name="release",
+                    reviewer=release_reviewer or GoogleAdkReleaseReviewer(),
+                    evidence=build_release_evidence(
                         request.repository,
                         metadata,
                         deterministic_findings,
