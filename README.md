@@ -132,6 +132,8 @@ forgeflow analyze --repo . --agents test
 forgeflow analyze --repo . --agents security,test
 forgeflow analyze --repo . --agents architecture
 forgeflow analyze --repo . --agents security,test,architecture
+forgeflow analyze --repo . --agents release
+forgeflow analyze --repo . --agents security,test,architecture,release
 ```
 
 The command writes `review.md`, `findings.json`, and `execution-summary.json`. It performs bounded
@@ -142,7 +144,9 @@ exclusions are skipped. Findings are evidence-validated, deduplicated, and assig
 engineering prioritization score. The optional specialist modes run isolated Google ADK reviewers over bounded, line-numbered,
 credential-redacted evidence bundles. The Test Agent receives role-labeled production and test files
 with likely relationships annotated by trusted code. The Architecture Agent receives a trusted
-module, entry-point, and import summary alongside bounded repository excerpts. Agent findings pass
+module, entry-point, and import summary alongside bounded repository excerpts. The Release Agent
+receives trusted release-surface and literal version, image, and workflow-reference annotations.
+Agent findings pass
 through confidence filtering, literal evidence validation, semantic verification, deduplication,
 and reporting. Only semantically verified or deterministically confirmed findings affect the
 engineering score and `--fail-on`; ambiguous agent candidates remain visible for human review
@@ -150,6 +154,7 @@ without failing CI. Specialist reviews run concurrently, and one provider failur
 warning without discarding deterministic or other successful results. See
 [`docs/security-agent.md`](docs/security-agent.md), [`docs/test-agent.md`](docs/test-agent.md),
 [`docs/architecture-agent.md`](docs/architecture-agent.md),
+[`docs/release-agent.md`](docs/release-agent.md),
 [`docs/finding-quality.md`](docs/finding-quality.md), [`docs/rules.md`](docs/rules.md), and
 [`docs/quality-gates.md`](docs/quality-gates.md).
 
