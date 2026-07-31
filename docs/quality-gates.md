@@ -36,6 +36,7 @@ certification, compliance result, or substitute for expert review.
 ```bash
 forgeflow analyze --repo . --fail-on high
 forgeflow analyze --repo . --min-confidence 0.80
+forgeflow analyze --repo . --agents security,test --min-agent-coverage 1.0
 forgeflow analyze --repo . --exclude "examples/**" --exclude "vendor/**"
 ```
 
@@ -45,3 +46,15 @@ analysis failure. Human-review candidates remain visible but cannot fail CI. Exc
 repository-relative glob patterns and may be repeated. When the output directory is inside the
 analyzed repository, ForgeFlow automatically excludes it to prevent report feedback from becoming
 a new finding.
+
+## Specialist coverage gate
+
+`--min-agent-coverage` is independent of finding severity. It compares completed specialist
+reviews with the number requested through `--agents`. A value of `1.0` requires every requested
+specialist to complete; `0.5` permits half to complete. A failed coverage gate still writes the
+reports and returns exit code `1`. Supplying a positive coverage requirement without requesting a
+specialist is treated as invalid input and returns exit code `2`.
+
+`--agent-concurrency` bounds simultaneous provider calls from 1 to 4 and defaults to 2. Lowering it
+to 1 is useful for quota-constrained environments; it does not change the requested coverage
+calculation.

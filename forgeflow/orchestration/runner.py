@@ -188,9 +188,23 @@ async def _run_job(job: SpecialistJob) -> SpecialistResult:
     )
 
 
-async def run_specialist_jobs(jobs: list[SpecialistJob]) -> list[SpecialistResult]:
-    """Run isolated specialist reviews concurrently and preserve partial success."""
+async def run_specialist_jobs(
+    jobs: list[SpecialistJob],
+    *,
+    max_concurrency: int | None = None,
+) -> list[SpecialistResult]:
+    """Run isolated specialist reviews with bounded concurrency and partial success."""
     if not jobs:
         return []
+
+    concurrency = len(jobs) if max_concurrency is None else max_concurrency
+    if concurrency < 1:
+        raise ValueError("max_concurrency must be at least 1")
+    semaphore = asyncio.Semaphore(min(concurrency, len(jobs)))
+
+    async def run_limited(job: SpecialistJob) -> SpecialistResult:
+        async with semaphore:
+            return await _run_job(job)
+
     with _suppress_provider_tracebacks():
-        return list(await asyncio.gather(*(_run_job(job) for job in jobs)))
+        return list(await asyncio.gather(*(run_limited(job) for job in jobs)))

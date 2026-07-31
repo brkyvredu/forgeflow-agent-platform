@@ -77,6 +77,10 @@ def _markdown_report(result: AnalysisResult) -> str:
             f"{result.execution.requested_agent_count} ({coverage_percent}%)"
         )
     )
+    coverage_gate = "passed" if result.execution.coverage_gate_passed else "failed"
+    minimum_coverage_percent = round(
+        result.execution.minimum_specialist_coverage * 100
+    )
 
     return f"""# ForgeFlow Repository Review
 
@@ -95,6 +99,8 @@ separately. Only scoring-eligible findings affect the engineering score and `--f
 - Human-review candidates: **{result.quality.human_review_count}**
 - Analysis status: **{result.execution.status}**
 - Specialist coverage: **{coverage_label}**
+- Specialist coverage gate: **{coverage_gate}**; minimum **{minimum_coverage_percent}%**
+- Specialist concurrency limit: **{result.execution.specialist_concurrency}**
 - Note: {result.score.disclaimer}
 
 ## Repository

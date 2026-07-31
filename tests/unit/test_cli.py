@@ -126,6 +126,8 @@ def test_analyze_runs_security_agent_and_publishes_supported_finding(tmp_path: P
     summary = json.loads((output / "execution-summary.json").read_text(encoding="utf-8"))
     assert summary["execution"]["agent_runs"]["security"]["status"] == "completed"
     assert summary["execution"]["analyzer_mode"] == "deterministic-rules+security-agent"
+    assert summary["execution"]["coverage_gate_passed"] is True
+    assert summary["execution"]["specialist_concurrency"] == 2
 
 
 def test_analyze_preserves_deterministic_results_when_security_agent_fails(
@@ -443,9 +445,57 @@ def test_analyze_runs_release_agent_as_human_review_candidate(
     assert summary["execution"]["analyzer_mode"] == "deterministic-rules+release-agent"
 
 
-def test_analyze_rejects_invalid_agent_retry_configuration(tmp_path: Path) -> None:
+def test_analyze_rejects_invalid_agent_runtime_configuration(tmp_path: Path) -> None:
     repository = tmp_path / "repository"
     repository.mkdir()
 
     assert _run_analyze(repository, tmp_path / "attempts", agent_attempts=0) == 2
     assert _run_analyze(repository, tmp_path / "backoff", agent_backoff=-0.1) == 2
+    assert _run_analyze(repository, tmp_path / "concurrency", agent_concurrency=0) == 2
+    assert _run_analyze(repository, tmp_path / "coverage-low", min_agent_coverage=-0.1) == 2
+    assert _run_analyze(repository, tmp_path / "coverage-high", min_agent_coverage=1.1) == 2
+    assert _run_analyze(repository, tmp_path / "coverage-none", min_agent_coverage=1.0) == 2
+
+
+def test_agent_coverage_gate_fails_degraded_analysis(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    (repository / "app.py").write_text("print('safe')\n", encoding="utf-8")
+    output = tmp_path / "reports"
+
+    exit_code = _run_analyze(
+        repository,
+        output,
+        agents="security",
+        security_reviewer=_FailingSecurityReviewer(),
+        agent_attempts=1,
+        min_agent_coverage=1.0,
+    )
+
+    assert exit_code == 1
+    summary = json.loads((output / "execution-summary.json").read_text(encoding="utf-8"))
+    assert summary["execution"]["status"] == "degraded"
+    assert summary["execution"]["specialist_coverage"] == 0.0
+    assert summary["execution"]["minimum_specialist_coverage"] == 1.0
+    assert summary["execution"]["coverage_gate_passed"] is False
+
+
+def test_agent_coverage_gate_is_independent_of_finding_gate(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    (repository / "app.py").write_text("eval(user_input)\n", encoding="utf-8")
+    output = tmp_path / "reports"
+
+    exit_code = _run_analyze(
+        repository,
+        output,
+        agents="security",
+        security_reviewer=_FakeSecurityReviewer(),
+        fail_on="none",
+        min_agent_coverage=1.0,
+    )
+
+    assert exit_code == 0
+    summary = json.loads((output / "execution-summary.json").read_text(encoding="utf-8"))
+    assert summary["execution"]["coverage_gate_passed"] is True
+    assert summary["execution"]["minimum_specialist_coverage"] == 1.0

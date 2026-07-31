@@ -120,3 +120,62 @@ def test_provider_traceback_logging_is_suppressed(
 
     assert result.summary.status == "failed"
     assert "provider traceback" not in caplog.text
+
+
+class _ConcurrencyState:
+    def __init__(self) -> None:
+        self.active = 0
+        self.maximum = 0
+
+
+class _TrackingReviewer:
+    def __init__(self, state: _ConcurrencyState) -> None:
+        self.state = state
+
+    async def review(self, evidence: RepositoryEvidence) -> list[object]:
+        del evidence
+        self.state.active += 1
+        self.state.maximum = max(self.state.maximum, self.state.active)
+        await asyncio.sleep(0.01)
+        self.state.active -= 1
+        return []
+
+
+def test_specialist_concurrency_is_bounded() -> None:
+    state = _ConcurrencyState()
+    jobs = [
+        SpecialistJob(
+            name=f"agent-{index}",
+            reviewer=_TrackingReviewer(state),  # type: ignore[arg-type]
+            evidence=_evidence(),
+            max_attempts=1,
+            retry_backoff_seconds=0,
+        )
+        for index in range(4)
+    ]
+
+    results = asyncio.run(run_specialist_jobs(jobs, max_concurrency=2))
+
+    assert [result.name for result in results] == [
+        "agent-0",
+        "agent-1",
+        "agent-2",
+        "agent-3",
+    ]
+    assert state.maximum == 2
+
+
+def test_specialist_concurrency_rejects_zero() -> None:
+    with pytest.raises(ValueError, match="at least 1"):
+        asyncio.run(
+            run_specialist_jobs(
+                [
+                    SpecialistJob(
+                        name="security",
+                        reviewer=_PermanentReviewer(),  # type: ignore[arg-type]
+                        evidence=_evidence(),
+                    )
+                ],
+                max_concurrency=0,
+            )
+        )
