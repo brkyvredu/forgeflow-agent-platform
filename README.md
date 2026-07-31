@@ -135,6 +135,8 @@ forgeflow analyze --repo . --agents security,test,architecture
 forgeflow analyze --repo . --agents release
 forgeflow analyze --repo . --agents security,test,architecture,release
 forgeflow analyze --repo . --agents security,test --agent-attempts 3 --agent-backoff 1.0
+forgeflow analyze --repo . --agents security,test,architecture,release --agent-concurrency 1
+forgeflow analyze --repo . --agents security,test --min-agent-coverage 1.0
 ```
 
 The command writes `review.md`, `findings.json`, and `execution-summary.json`. It performs bounded
@@ -151,10 +153,12 @@ Agent findings pass
 through confidence filtering, literal evidence validation, semantic verification, deduplication,
 and reporting. Only semantically verified or deterministically confirmed findings affect the
 engineering score and `--fail-on`; ambiguous agent candidates remain visible for human review
-without failing CI. Specialist reviews run concurrently. Transient provider failures are retried with bounded
+without failing CI. Specialist reviews run with bounded concurrency. Transient provider failures are retried with bounded
 exponential backoff; a final provider failure produces a degraded analysis with a provisional score
-without discarding deterministic or other successful results. Generated ForgeFlow report
-directories are automatically excluded from later scans. See
+without discarding deterministic or other successful results. Specialist calls use bounded
+concurrency to reduce provider bursts. `--min-agent-coverage` can turn degraded specialist coverage
+into an independent CI failure, even when no scoring-eligible finding crosses `--fail-on`.
+Generated ForgeFlow report directories are automatically excluded from later scans. See
 [`docs/security-agent.md`](docs/security-agent.md), [`docs/test-agent.md`](docs/test-agent.md),
 [`docs/architecture-agent.md`](docs/architecture-agent.md),
 [`docs/release-agent.md`](docs/release-agent.md),

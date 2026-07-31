@@ -102,6 +102,21 @@ def _parser() -> argparse.ArgumentParser:
         default=1.0,
         help="Initial retry backoff in seconds before exponential growth (default: 1.0)",
     )
+    analyze.add_argument(
+        "--agent-concurrency",
+        type=int,
+        default=2,
+        help="Maximum specialist reviews in flight at once (default: 2)",
+    )
+    analyze.add_argument(
+        "--min-agent-coverage",
+        type=float,
+        default=0.0,
+        help=(
+            "Return exit code 1 when completed/requested specialist coverage is below "
+            "this threshold (0.0-1.0; default: 0.0)"
+        ),
+    )
     return parser
 
 
@@ -146,6 +161,8 @@ def _run_analyze(
     release_reviewer: ReleaseReviewer | None = None,
     agent_attempts: int = 3,
     agent_backoff: float = 1.0,
+    agent_concurrency: int = 2,
+    min_agent_coverage: float = 0.0,
 ) -> int:
     started_at = datetime.now(UTC)
     started_clock = perf_counter()
@@ -154,6 +171,15 @@ def _run_analyze(
             raise ValueError("--agent-attempts must be between 1 and 5")
         if not 0.0 <= agent_backoff <= 30.0:
             raise ValueError("--agent-backoff must be between 0 and 30 seconds")
+        if not 1 <= agent_concurrency <= 4:
+            raise ValueError("--agent-concurrency must be between 1 and 4")
+        if not 0.0 <= min_agent_coverage <= 1.0:
+            raise ValueError("--min-agent-coverage must be between 0.0 and 1.0")
+        selected_agents = _normalize_agents(agents)
+        if min_agent_coverage > 0.0 and not selected_agents:
+            raise ValueError(
+                "--min-agent-coverage requires at least one specialist in --agents"
+            )
         request = AnalysisRequest(
             repository=repository,
             output_directory=output,
@@ -175,7 +201,6 @@ def _run_analyze(
             request.repository, metadata, effective_exclusions
         )
         raw_findings = list(deterministic_findings)
-        selected_agents = _normalize_agents(agents)
         jobs: list[SpecialistJob] = []
         if "security" in selected_agents:
             jobs.append(
@@ -243,7 +268,9 @@ def _run_analyze(
 
         agent_runs: dict[str, AgentRunSummary] = {}
         agent_notes: list[str] = []
-        for specialist_result in asyncio.run(run_specialist_jobs(jobs)):
+        for specialist_result in asyncio.run(
+            run_specialist_jobs(jobs, max_concurrency=agent_concurrency)
+        ):
             raw_findings.extend(specialist_result.findings)
             agent_runs[specialist_result.name] = specialist_result.summary
             if specialist_result.note:
@@ -272,6 +299,11 @@ def _run_analyze(
         if failed_agent_count
         else None
     )
+    coverage_gate_passed = specialist_coverage >= min_agent_coverage
+    coverage_note = (
+        f"Specialist coverage gate: {specialist_coverage:.0%} completed; "
+        f"minimum required {min_agent_coverage:.0%}."
+    )
     result = AnalysisResult(
         repository=metadata,
         findings=findings,
@@ -291,6 +323,7 @@ def _run_analyze(
                 f"Generated {len(deterministic_findings)} deterministic finding(s).",
                 f"Published {quality.supported_finding_count} evidence-backed finding(s).",
                 f"Eligible for score and quality gate: {quality.scoring_eligible_count}.",
+                coverage_note,
                 *([degraded_note] if degraded_note else []),
                 *agent_notes,
             ],
@@ -300,6 +333,9 @@ def _run_analyze(
             failed_agent_count=failed_agent_count,
             specialist_coverage=specialist_coverage,
             score_provisional=bool(failed_agent_count),
+            specialist_concurrency=agent_concurrency,
+            minimum_specialist_coverage=min_agent_coverage,
+            coverage_gate_passed=coverage_gate_passed,
         ),
     )
     review_path, findings_path, summary_path = write_analysis_reports(
@@ -318,16 +354,29 @@ def _run_analyze(
         f"Engineering score: {score.value}/100{provisional} (risk={score.risk_level}; "
         f"eligible={quality.scoring_eligible_count})"
     )
+    print(
+        f"Specialist coverage: {completed_agent_count}/{requested_agent_count} "
+        f"({specialist_coverage:.0%}); required={min_agent_coverage:.0%}"
+    )
     if degraded_note:
         print(degraded_note)
     print(f"Review: {review_path}")
     print(f"Findings JSON: {findings_path}")
     print(f"Execution summary: {summary_path}")
 
+    gate_failed = False
     if _quality_gate_failed(findings, fail_on):
         print(f"Quality gate failed: finding severity met --fail-on {fail_on}", file=sys.stderr)
-        return 1
-    return 0
+        gate_failed = True
+    if not coverage_gate_passed:
+        print(
+            "Quality gate failed: specialist coverage "
+            f"{specialist_coverage:.0%} is below --min-agent-coverage "
+            f"{min_agent_coverage:.0%}",
+            file=sys.stderr,
+        )
+        gate_failed = True
+    return 1 if gate_failed else 0
 
 
 def main() -> None:
@@ -343,6 +392,8 @@ def main() -> None:
                 agents=args.agents,
                 agent_attempts=args.agent_attempts,
                 agent_backoff=args.agent_backoff,
+                agent_concurrency=args.agent_concurrency,
+                min_agent_coverage=args.min_agent_coverage,
             )
         )
     raise SystemExit(2)

@@ -18,12 +18,21 @@ Non-transient validation and structured-output errors are not retried. Each agen
 attempt count, retryability, final error type, and provider status code. Provider stack traces are
 suppressed during bounded review; the execution summary retains a concise failure record.
 
+Specialist requests also use bounded concurrency. The default permits two reviews in flight; use
+`--agent-concurrency 1` for quota-constrained providers or `--agent-concurrency 4` when the provider
+and project quota support full parallelism.
+
 ## Degraded analysis
 
 When a requested specialist fails, deterministic results and successful specialist results are
 preserved. The execution status becomes `degraded`, the engineering score is marked provisional,
 and the report includes completed/requested specialist coverage. A provisional score is not a
 claim that failed specialist surfaces are clean.
+
+Use `--min-agent-coverage` to make specialist availability an explicit quality gate. The value is a
+fraction from `0.0` to `1.0`. For example, `--min-agent-coverage 1.0` requires every requested
+specialist to complete and returns exit code 1 when any requested reviewer fails. This gate is
+independent of finding severity and `--fail-on`.
 
 ## Report isolation
 

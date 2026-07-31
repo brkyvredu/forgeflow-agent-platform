@@ -165,6 +165,9 @@ class ExecutionSummary(BaseModel):
     failed_agent_count: int = Field(default=0, ge=0)
     specialist_coverage: float = Field(default=1.0, ge=0.0, le=1.0)
     score_provisional: bool = False
+    specialist_concurrency: int = Field(default=1, ge=1)
+    minimum_specialist_coverage: float = Field(default=0.0, ge=0.0, le=1.0)
+    coverage_gate_passed: bool = True
 
 
 class AnalysisResult(BaseModel):
