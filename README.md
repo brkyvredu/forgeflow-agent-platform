@@ -134,6 +134,7 @@ forgeflow analyze --repo . --agents architecture
 forgeflow analyze --repo . --agents security,test,architecture
 forgeflow analyze --repo . --agents release
 forgeflow analyze --repo . --agents security,test,architecture,release
+forgeflow analyze --repo . --agents security,test --agent-attempts 3 --agent-backoff 1.0
 ```
 
 The command writes `review.md`, `findings.json`, and `execution-summary.json`. It performs bounded
@@ -150,13 +151,16 @@ Agent findings pass
 through confidence filtering, literal evidence validation, semantic verification, deduplication,
 and reporting. Only semantically verified or deterministically confirmed findings affect the
 engineering score and `--fail-on`; ambiguous agent candidates remain visible for human review
-without failing CI. Specialist reviews run concurrently, and one provider failure is recorded as a
-warning without discarding deterministic or other successful results. See
+without failing CI. Specialist reviews run concurrently. Transient provider failures are retried with bounded
+exponential backoff; a final provider failure produces a degraded analysis with a provisional score
+without discarding deterministic or other successful results. Generated ForgeFlow report
+directories are automatically excluded from later scans. See
 [`docs/security-agent.md`](docs/security-agent.md), [`docs/test-agent.md`](docs/test-agent.md),
 [`docs/architecture-agent.md`](docs/architecture-agent.md),
 [`docs/release-agent.md`](docs/release-agent.md),
 [`docs/finding-quality.md`](docs/finding-quality.md), [`docs/rules.md`](docs/rules.md), and
-[`docs/quality-gates.md`](docs/quality-gates.md).
+[`docs/quality-gates.md`](docs/quality-gates.md), and
+[`docs/evaluation-hardening.md`](docs/evaluation-hardening.md).
 
 Run tests:
 

@@ -145,8 +145,10 @@ def test_analyze_preserves_deterministic_results_when_security_agent_fails(
 
     assert exit_code == 0
     summary = json.loads((output / "execution-summary.json").read_text(encoding="utf-8"))
-    assert summary["execution"]["status"] == "completed_with_warnings"
+    assert summary["execution"]["status"] == "degraded"
     assert summary["execution"]["agent_runs"]["security"]["status"] == "failed"
+    assert summary["execution"]["score_provisional"] is True
+    assert summary["execution"]["specialist_coverage"] == 0.0
 
 
 class _FakeTestReviewer:
@@ -264,9 +266,13 @@ def test_test_agent_failure_does_not_discard_security_result(tmp_path: Path) -> 
 
     assert exit_code == 0
     summary = json.loads((output / "execution-summary.json").read_text(encoding="utf-8"))
-    assert summary["execution"]["status"] == "completed_with_warnings"
+    assert summary["execution"]["status"] == "degraded"
     assert summary["execution"]["agent_runs"]["security"]["status"] == "completed"
     assert summary["execution"]["agent_runs"]["test"]["status"] == "failed"
+    assert summary["execution"]["score_provisional"] is True
+    assert summary["execution"]["completed_agent_count"] == 1
+    assert summary["execution"]["failed_agent_count"] == 1
+    assert summary["execution"]["specialist_coverage"] == 0.5
 
 
 class _AmbiguousSecurityReviewer:
@@ -435,3 +441,11 @@ def test_analyze_runs_release_agent_as_human_review_candidate(
     summary = json.loads((output / "execution-summary.json").read_text(encoding="utf-8"))
     assert summary["execution"]["agent_runs"]["release"]["status"] == "completed"
     assert summary["execution"]["analyzer_mode"] == "deterministic-rules+release-agent"
+
+
+def test_analyze_rejects_invalid_agent_retry_configuration(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+
+    assert _run_analyze(repository, tmp_path / "attempts", agent_attempts=0) == 2
+    assert _run_analyze(repository, tmp_path / "backoff", agent_backoff=-0.1) == 2

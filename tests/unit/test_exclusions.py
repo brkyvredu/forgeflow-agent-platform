@@ -30,3 +30,20 @@ def test_prior_forgeflow_reports_are_not_rescanned(tmp_path: Path) -> None:
     findings = scan_repository(tmp_path, metadata)
 
     assert all(finding.rule_id != "FF-SEC-002" for finding in findings)
+
+
+def test_completed_report_directory_is_excluded_from_all_scanning(tmp_path: Path) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.py").write_text("print('safe')\n", encoding="utf-8")
+    report_directory = tmp_path / "reports-v0.2-rc"
+    report_directory.mkdir()
+    for name in ("findings.json", "execution-summary.json", "review.md"):
+        (report_directory / name).write_text("generated", encoding="utf-8")
+    (report_directory / "trap.py").write_text("eval(user_input)\n", encoding="utf-8")
+
+    metadata = discover_repository(tmp_path)
+    findings = scan_repository(tmp_path, metadata)
+
+    assert metadata.total_files == 1
+    assert metadata.skipped_generated_directories == 1
+    assert all(finding.file != Path("reports-v0.2-rc/trap.py") for finding in findings)

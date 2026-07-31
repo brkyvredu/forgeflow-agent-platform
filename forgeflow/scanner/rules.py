@@ -8,6 +8,7 @@ from pathlib import Path
 from forgeflow.domain.models import Finding, RepositoryMetadata, Severity
 from forgeflow.scanner.policy import (
     is_excluded_directory,
+    is_forgeflow_report_directory,
     is_forgeflow_report_file,
     is_scannable_text_file,
     is_sensitive_file,
@@ -73,6 +74,7 @@ def _iter_safe_text_files(
             for name in directory_names
             if not is_excluded_directory(name)
             and not (current / name).is_symlink()
+            and not is_forgeflow_report_directory(current / name)
             and not matches_custom_exclusion(
                 (current / name).relative_to(root).as_posix(), exclusions
             )

@@ -113,6 +113,7 @@ class RepositoryMetadata(BaseModel):
     skipped_sensitive_files: int = Field(default=0, ge=0)
     skipped_symlinks: int = Field(default=0, ge=0)
     skipped_custom_exclusions: int = Field(default=0, ge=0)
+    skipped_generated_directories: int = Field(default=0, ge=0)
 
 
 class AnalysisQuality(BaseModel):
@@ -145,6 +146,10 @@ class AgentRunSummary(BaseModel):
     context_chars: int = Field(default=0, ge=0)
     prompt_risk_files: int = Field(default=0, ge=0)
     message: str | None = None
+    attempt_count: int = Field(default=1, ge=1)
+    retryable: bool = False
+    error_type: str | None = None
+    error_status_code: int | None = None
 
 
 class ExecutionSummary(BaseModel):
@@ -155,6 +160,11 @@ class ExecutionSummary(BaseModel):
     analyzer_mode: str = "deterministic-rules"
     notes: list[str] = Field(default_factory=list)
     agent_runs: dict[str, AgentRunSummary] = Field(default_factory=dict)
+    requested_agent_count: int = Field(default=0, ge=0)
+    completed_agent_count: int = Field(default=0, ge=0)
+    failed_agent_count: int = Field(default=0, ge=0)
+    specialist_coverage: float = Field(default=1.0, ge=0.0, le=1.0)
+    score_provisional: bool = False
 
 
 class AnalysisResult(BaseModel):

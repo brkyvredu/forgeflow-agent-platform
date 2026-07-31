@@ -5,6 +5,8 @@ from pathlib import Path
 from forgeflow.domain.models import RepositoryMetadata
 from forgeflow.scanner.policy import (
     is_excluded_directory,
+    is_forgeflow_report_directory,
+    is_forgeflow_report_file,
     is_sensitive_file,
     matches_custom_exclusion,
 )
@@ -119,6 +121,7 @@ def discover_repository(
     skipped_sensitive_files = 0
     skipped_symlinks = 0
     skipped_custom_exclusions = 0
+    skipped_generated_directories = 0
 
     for current_directory, directory_names, file_names in os.walk(root, followlinks=False):
         current = Path(current_directory)
@@ -129,11 +132,14 @@ def discover_repository(
             relative_directory = _relative(candidate, root)
             if is_excluded_directory(directory_name):
                 continue
-            if matches_custom_exclusion(relative_directory, exclusions):
-                skipped_custom_exclusions += 1
-                continue
             if candidate.is_symlink():
                 skipped_symlinks += 1
+                continue
+            if is_forgeflow_report_directory(candidate):
+                skipped_generated_directories += 1
+                continue
+            if matches_custom_exclusion(relative_directory, exclusions):
+                skipped_custom_exclusions += 1
                 continue
             safe_directories.append(directory_name)
             if _is_test_directory(candidate):
@@ -148,6 +154,8 @@ def discover_repository(
             relative_path = _relative(path, root)
             if matches_custom_exclusion(relative_path, exclusions):
                 skipped_custom_exclusions += 1
+                continue
+            if is_forgeflow_report_file(path):
                 continue
             if is_sensitive_file(path):
                 skipped_sensitive_files += 1
@@ -187,4 +195,5 @@ def discover_repository(
         skipped_sensitive_files=skipped_sensitive_files,
         skipped_symlinks=skipped_symlinks,
         skipped_custom_exclusions=skipped_custom_exclusions,
+        skipped_generated_directories=skipped_generated_directories,
     )

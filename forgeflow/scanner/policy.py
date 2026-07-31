@@ -112,3 +112,11 @@ def matches_custom_exclusion(relative_path: str, patterns: list[str] | tuple[str
 
 def is_forgeflow_report_file(path: Path) -> bool:
     return path.name.lower() in FORGEFLOW_REPORT_NAMES
+
+
+def is_forgeflow_report_directory(path: Path) -> bool:
+    """Identify a completed ForgeFlow report directory regardless of its name."""
+    try:
+        return all((path / name).is_file() for name in FORGEFLOW_REPORT_NAMES)
+    except OSError:
+        return False
