@@ -152,3 +152,50 @@ def test_score_ignores_findings_that_require_human_review() -> None:
 
     assert score.value == 100
     assert score.deductions["high"] == 0
+
+
+def test_cross_agent_same_root_cause_findings_are_merged() -> None:
+    architecture = _finding(
+        agent="architecture-agent",
+        sources=["architecture-agent"],
+        category="Deployment Topology",
+        severity=Severity.INFO,
+        title="Mismatched volume mount path between init container and MCP server container",
+        description=(
+            "The initContainer mounts the repository volume at /workspace and clones into "
+            "/workspace/repository, while the MCP server mounts it at /workspace/repository."
+        ),
+        recommendation="Mount the repository volume at the same workspace path.",
+        file=Path("infra/k8s/services.yaml"),
+        line_start=26,
+        line_end=33,
+        evidence="mountPath: /workspace",
+        rule_id="FF-AGENT-ARCH-MOUNT",
+        scoring_eligible=False,
+        validation_status=ValidationStatus.HUMAN_REVIEW_REQUIRED,
+    )
+    release = _finding(
+        agent="release-agent",
+        sources=["release-agent"],
+        category="deployment",
+        severity=Severity.INFO,
+        title="Volume mount path mismatch between clone initContainer and mcp-server container",
+        description=(
+            "The clone initContainer writes to /workspace/repository but the mcp-server mount "
+            "places the files at /workspace/repository/repository."
+        ),
+        recommendation="Align the repository volume mount paths.",
+        file=Path("infra/k8s/services.yaml"),
+        line_start=23,
+        line_end=33,
+        evidence='args: ["clone", "/workspace/repository"]',
+        rule_id="FF-AGENT-REL-MOUNT",
+        scoring_eligible=False,
+        validation_status=ValidationStatus.HUMAN_REVIEW_REQUIRED,
+    )
+
+    merged, duplicate_count = deduplicate_findings([architecture, release])
+
+    assert duplicate_count == 1
+    assert len(merged) == 1
+    assert merged[0].sources == ["architecture-agent", "release-agent"]

@@ -90,6 +90,18 @@ def _parser() -> argparse.ArgumentParser:
             "or none"
         ),
     )
+    analyze.add_argument(
+        "--agent-attempts",
+        type=int,
+        default=3,
+        help="Maximum attempts for transient specialist-provider failures (default: 3)",
+    )
+    analyze.add_argument(
+        "--agent-backoff",
+        type=float,
+        default=1.0,
+        help="Initial retry backoff in seconds before exponential growth (default: 1.0)",
+    )
     return parser
 
 
@@ -132,10 +144,16 @@ def _run_analyze(
     test_reviewer: TestReviewer | None = None,
     architecture_reviewer: ArchitectureReviewer | None = None,
     release_reviewer: ReleaseReviewer | None = None,
+    agent_attempts: int = 3,
+    agent_backoff: float = 1.0,
 ) -> int:
     started_at = datetime.now(UTC)
     started_clock = perf_counter()
     try:
+        if not 1 <= agent_attempts <= 5:
+            raise ValueError("--agent-attempts must be between 1 and 5")
+        if not 0.0 <= agent_backoff <= 30.0:
+            raise ValueError("--agent-backoff must be between 0 and 30 seconds")
         request = AnalysisRequest(
             repository=repository,
             output_directory=output,
@@ -170,6 +188,8 @@ def _run_analyze(
                         deterministic_findings,
                         effective_exclusions,
                     ),
+                    max_attempts=agent_attempts,
+                    retry_backoff_seconds=agent_backoff,
                 )
             )
         if "test" in selected_agents:
@@ -183,6 +203,8 @@ def _run_analyze(
                         deterministic_findings,
                         effective_exclusions,
                     ),
+                    max_attempts=agent_attempts,
+                    retry_backoff_seconds=agent_backoff,
                 )
             )
         if "architecture" in selected_agents:
@@ -198,6 +220,8 @@ def _run_analyze(
                         deterministic_findings,
                         effective_exclusions,
                     ),
+                    max_attempts=agent_attempts,
+                    retry_backoff_seconds=agent_backoff,
                 )
             )
 
@@ -212,6 +236,8 @@ def _run_analyze(
                         deterministic_findings,
                         effective_exclusions,
                     ),
+                    max_attempts=agent_attempts,
+                    retry_backoff_seconds=agent_backoff,
                 )
             )
 
@@ -234,17 +260,25 @@ def _run_analyze(
     finished_at = datetime.now(UTC)
     duration_ms = max(0, round((perf_counter() - started_clock) * 1000))
     severity_counts = Counter(finding.severity.value for finding in findings)
+    requested_agent_count = len(selected_agents)
+    completed_agent_count = sum(run.status == "completed" for run in agent_runs.values())
+    failed_agent_count = sum(run.status == "failed" for run in agent_runs.values())
+    specialist_coverage = (
+        completed_agent_count / requested_agent_count if requested_agent_count else 1.0
+    )
+    degraded_note = (
+        f"Analysis completed in degraded mode: {failed_agent_count} of "
+        f"{requested_agent_count} specialist agents failed."
+        if failed_agent_count
+        else None
+    )
     result = AnalysisResult(
         repository=metadata,
         findings=findings,
         quality=quality,
         score=score,
         execution=ExecutionSummary(
-            status=(
-                "completed_with_warnings"
-                if any(run.status == "failed" for run in agent_runs.values())
-                else "completed"
-            ),
+            status="degraded" if failed_agent_count else "completed",
             started_at=started_at,
             finished_at=finished_at,
             duration_ms=duration_ms,
@@ -257,9 +291,15 @@ def _run_analyze(
                 f"Generated {len(deterministic_findings)} deterministic finding(s).",
                 f"Published {quality.supported_finding_count} evidence-backed finding(s).",
                 f"Eligible for score and quality gate: {quality.scoring_eligible_count}.",
+                *([degraded_note] if degraded_note else []),
                 *agent_notes,
             ],
             agent_runs=agent_runs,
+            requested_agent_count=requested_agent_count,
+            completed_agent_count=completed_agent_count,
+            failed_agent_count=failed_agent_count,
+            specialist_coverage=specialist_coverage,
+            score_provisional=bool(failed_agent_count),
         ),
     )
     review_path, findings_path, summary_path = write_analysis_reports(
@@ -273,10 +313,13 @@ def _run_analyze(
     )
     print(f"Repository analysis completed: {request.repository}")
     print(f"Findings: {len(findings)}" + (f" ({counts})" if counts else ""))
+    provisional = " — provisional" if failed_agent_count else ""
     print(
-        f"Engineering score: {score.value}/100 (risk={score.risk_level}; "
+        f"Engineering score: {score.value}/100{provisional} (risk={score.risk_level}; "
         f"eligible={quality.scoring_eligible_count})"
     )
+    if degraded_note:
+        print(degraded_note)
     print(f"Review: {review_path}")
     print(f"Findings JSON: {findings_path}")
     print(f"Execution summary: {summary_path}")
@@ -298,6 +341,8 @@ def main() -> None:
                 fail_on=args.fail_on,
                 exclusions=args.exclude,
                 agents=args.agents,
+                agent_attempts=args.agent_attempts,
+                agent_backoff=args.agent_backoff,
             )
         )
     raise SystemExit(2)

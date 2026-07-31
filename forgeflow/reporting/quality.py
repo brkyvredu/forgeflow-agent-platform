@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from pathlib import Path
 
@@ -34,6 +35,47 @@ _VALIDATION_ORDER = {
     ValidationStatus.UNVALIDATED: 4,
     ValidationStatus.UNSUPPORTED: 5,
 }
+_TOKEN_PATTERN = re.compile(r"[a-z0-9][a-z0-9_./-]{2,}")
+_STOP_TOKENS = frozenset(
+    {
+        "about",
+        "adjust",
+        "because",
+        "between",
+        "candidate",
+        "causing",
+        "change",
+        "concrete",
+        "configuration",
+        "container",
+        "could",
+        "creates",
+        "description",
+        "evidence",
+        "expected",
+        "finding",
+        "instead",
+        "into",
+        "main",
+        "places",
+        "recommendation",
+        "repository",
+        "review",
+        "same",
+        "should",
+        "specific",
+        "supported",
+        "that",
+        "their",
+        "this",
+        "through",
+        "using",
+        "volume",
+        "when",
+        "which",
+        "with",
+    }
+)
 
 
 def _safe_finding_path(repository: Path, relative_path: Path) -> Path | None:
@@ -117,28 +159,108 @@ def validate_findings(
     return supported, unsupported
 
 
-def deduplicate_findings(findings: list[Finding]) -> tuple[list[Finding], int]:
-    """Merge findings with the same stable fingerprint and retain all contributing sources."""
-    grouped: dict[str, list[Finding]] = defaultdict(list)
-    for finding in findings:
-        grouped[finding.fingerprint].append(finding)
+def _merge_group(group: list[Finding]) -> Finding:
+    primary = min(group, key=lambda item: _SEVERITY_ORDER[item.severity]).model_copy(deep=True)
+    primary.confidence = max(item.confidence for item in group)
+    primary.sources = sorted({source for item in group for source in item.sources})
+    primary.agent = primary.sources[0]
+    strongest = min(group, key=lambda item: _VALIDATION_ORDER[item.validation_status])
+    primary.validation_status = strongest.validation_status
+    primary.scoring_eligible = any(item.scoring_eligible for item in group)
+    primary.validation_messages = sorted(
+        {message for item in group for message in item.validation_messages}
+    )
+    return primary
 
-    merged: list[Finding] = []
-    duplicate_count = 0
-    for group in grouped.values():
-        primary = min(group, key=lambda item: _SEVERITY_ORDER[item.severity]).model_copy(deep=True)
-        primary.confidence = max(item.confidence for item in group)
-        primary.sources = sorted({source for item in group for source in item.sources})
-        primary.agent = primary.sources[0]
-        strongest = min(group, key=lambda item: _VALIDATION_ORDER[item.validation_status])
-        primary.validation_status = strongest.validation_status
-        primary.scoring_eligible = any(item.scoring_eligible for item in group)
-        primary.validation_messages = sorted(
-            {message for item in group for message in item.validation_messages}
+
+def _finding_tokens(finding: Finding) -> set[str]:
+    text = " ".join(
+        (
+            finding.category,
+            finding.title,
+            finding.description,
+            finding.recommendation,
+            finding.evidence or "",
         )
-        merged.append(primary)
-        duplicate_count += len(group) - 1
+    ).lower()
+    tokens = set(_TOKEN_PATTERN.findall(text))
+    normalized: set[str] = set()
+    for token in tokens:
+        token = token.strip("./-")
+        if len(token) < 3 or token in _STOP_TOKENS:
+            continue
+        if token.endswith("s") and len(token) > 5 and not token.endswith("ss"):
+            token = token[:-1]
+        normalized.add(token)
+    return normalized
 
+
+def _line_ranges_are_related(first: Finding, second: Finding) -> bool:
+    if first.line_start is None or second.line_start is None:
+        return False
+    first_end = first.line_end or first.line_start
+    second_end = second.line_end or second.line_start
+    overlap = max(first.line_start, second.line_start) <= min(first_end, second_end)
+    if overlap:
+        return True
+    distance = min(abs(first.line_start - second_end), abs(second.line_start - first_end))
+    return distance <= 8
+
+
+def _same_root_cause(first: Finding, second: Finding) -> bool:
+    if first.file is None or second.file is None or first.file != second.file:
+        return False
+    if set(first.sources) == set(second.sources):
+        return False
+    if not _line_ranges_are_related(first, second):
+        return False
+
+    first_tokens = _finding_tokens(first)
+    second_tokens = _finding_tokens(second)
+    shared = first_tokens & second_tokens
+    union = first_tokens | second_tokens
+    similarity = len(shared) / len(union) if union else 0.0
+    path_or_identifier_tokens = {
+        token
+        for token in shared
+        if "/" in token or "_" in token or "-" in token or token in {"initcontainer", "mountpath"}
+    }
+    return similarity >= 0.24 and (len(shared) >= 5 or len(path_or_identifier_tokens) >= 2)
+
+
+def deduplicate_findings(findings: list[Finding]) -> tuple[list[Finding], int]:
+    """Merge exact and cross-agent same-root-cause findings."""
+    exact_groups: dict[str, list[Finding]] = defaultdict(list)
+    for finding in findings:
+        exact_groups[finding.fingerprint].append(finding)
+
+    exact_merged = [_merge_group(group) for group in exact_groups.values()]
+    duplicate_count = sum(len(group) - 1 for group in exact_groups.values())
+
+    semantic_groups: list[list[Finding]] = []
+    for finding in sorted(
+        exact_merged,
+        key=lambda item: (
+            item.file.as_posix() if item.file else "",
+            item.line_start or 0,
+            item.rule_id,
+        ),
+    ):
+        matching_group = next(
+            (
+                group
+                for group in semantic_groups
+                if any(_same_root_cause(finding, member) for member in group)
+            ),
+            None,
+        )
+        if matching_group is None:
+            semantic_groups.append([finding])
+        else:
+            matching_group.append(finding)
+            duplicate_count += 1
+
+    merged = [_merge_group(group) for group in semantic_groups]
     merged.sort(
         key=lambda finding: (
             _SEVERITY_ORDER[finding.severity],
@@ -177,7 +299,18 @@ def process_findings(
     confidence_filtered = [item for item in findings if item.confidence >= min_confidence]
     below_confidence_count = raw_count - len(confidence_filtered)
     evidence_matched, unsupported = validate_findings(repository, confidence_filtered)
-    verified = verify_findings(repository, evidence_matched)
+    verified_candidates = verify_findings(repository, evidence_matched)
+    semantically_unsupported = [
+        item
+        for item in verified_candidates
+        if item.validation_status == ValidationStatus.UNSUPPORTED
+    ]
+    verified = [
+        item
+        for item in verified_candidates
+        if item.validation_status != ValidationStatus.UNSUPPORTED
+    ]
+    unsupported.extend(semantically_unsupported)
     deduplicated, duplicates_merged = deduplicate_findings(verified)
     quality = AnalysisQuality(
         raw_finding_count=raw_count,

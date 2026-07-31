@@ -130,3 +130,60 @@ def test_test_absence_claim_is_verified_when_no_reference_exists(tmp_path: Path)
 
     assert verified.validation_status == ValidationStatus.SEMANTICALLY_VERIFIED
     assert verified.scoring_eligible is True
+
+
+def test_contradicted_redaction_test_claim_is_rejected(tmp_path: Path) -> None:
+    (tmp_path / "tests").mkdir()
+    source = tmp_path / "tests" / "test_redaction.py"
+    source.write_text(
+        "def test_redaction():\n"
+        "    raw = 'password = \"production-password-123\"'\n"
+        "    prompt = raw.replace('production-password-123', '***REDACTED***')\n"
+        "    assert 'production-password-123' not in prompt\n",
+        encoding="utf-8",
+    )
+    finding = _finding(
+        agent="test-agent",
+        category="misleading-test",
+        severity=Severity.MEDIUM,
+        title="Credential redaction test writes pre-redacted content",
+        description="The test input is already redacted and the assertion passes vacuously.",
+        recommendation="Write an unredacted password before redaction.",
+        file=Path("tests/test_redaction.py"),
+        line_start=1,
+        line_end=4,
+        evidence="assert 'production-password-123' not in prompt",
+        rule_id="FF-AGENT-TEST-CONTRADICTION",
+    )
+
+    verified = verify_findings(tmp_path, [finding])[0]
+
+    assert verified.validation_status == ValidationStatus.UNSUPPORTED
+    assert verified.scoring_eligible is False
+
+
+def test_unverified_external_route_claim_is_rejected(tmp_path: Path) -> None:
+    (tmp_path / "infra").mkdir()
+    (tmp_path / "infra" / "services.yaml").write_text(
+        "httpGet: { path: /list-apps, port: 8000 }\n", encoding="utf-8"
+    )
+    finding = _finding(
+        agent="release-agent",
+        category="deployment",
+        severity=Severity.MEDIUM,
+        title="Invalid HTTP readiness probe path",
+        description=(
+            "The readiness probe uses /list-apps, but the external API server exposes /apps."
+        ),
+        recommendation="Change the readiness probe route to /apps.",
+        file=Path("infra/services.yaml"),
+        line_start=1,
+        line_end=1,
+        evidence="httpGet: { path: /list-apps, port: 8000 }",
+        rule_id="FF-AGENT-REL-ROUTE",
+    )
+
+    verified = verify_findings(tmp_path, [finding])[0]
+
+    assert verified.validation_status == ValidationStatus.UNSUPPORTED
+    assert verified.scoring_eligible is False

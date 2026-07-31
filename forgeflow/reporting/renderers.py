@@ -62,9 +62,21 @@ def _markdown_report(result: AnalysisResult) -> str:
     review_findings = [finding for finding in result.findings if not finding.scoring_eligible]
     agent_runs = "\n".join(
         f"- {name.capitalize()}: {run.status}; findings={run.finding_count}; "
-        f"context_files={run.context_files}; duration_ms={run.duration_ms}"
+        f"attempts={run.attempt_count}; context_files={run.context_files}; "
+        f"duration_ms={run.duration_ms}"
+        + (f"; error={run.error_type}" if run.error_type else "")
         for name, run in sorted(result.execution.agent_runs.items())
     ) or "- No specialist agents requested"
+    score_suffix = " — provisional" if result.execution.score_provisional else ""
+    coverage_percent = round(result.execution.specialist_coverage * 100)
+    coverage_label = (
+        "not requested"
+        if result.execution.requested_agent_count == 0
+        else (
+            f"{result.execution.completed_agent_count}/"
+            f"{result.execution.requested_agent_count} ({coverage_percent}%)"
+        )
+    )
 
     return f"""# ForgeFlow Repository Review
 
@@ -77,10 +89,12 @@ separately. Only scoring-eligible findings affect the engineering score and `--f
 
 ## Engineering score
 
-- Score: **{result.score.value}/100**
+- Score: **{result.score.value}/100{score_suffix}**
 - Risk level: **{result.score.risk_level.capitalize()}**
 - Scoring-eligible findings: **{result.quality.scoring_eligible_count}**
 - Human-review candidates: **{result.quality.human_review_count}**
+- Analysis status: **{result.execution.status}**
+- Specialist coverage: **{coverage_label}**
 - Note: {result.score.disclaimer}
 
 ## Repository
@@ -91,6 +105,7 @@ separately. Only scoring-eligible findings affect the engineering score and `--f
 - Sensitive files skipped: {repository.skipped_sensitive_files}
 - Symlinks skipped: {repository.skipped_symlinks}
 - Custom exclusions skipped: {repository.skipped_custom_exclusions}
+- Generated report directories skipped: {repository.skipped_generated_directories}
 
 ## Languages
 
